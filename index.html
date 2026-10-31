@@ -7,146 +7,187 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gasoek+One&family=Gothic+A1:wght@400;600;800&family=Space+Mono:wght@700&display=swap">
 <script src="https://cdn.tailwindcss.com/3.4.16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
 <style>
-/* Layout: one narrow phone-width column; a holographic scanner bay on top, the result card below. Single dark look by choice. */
+/* Layout: one phone-width column styled like a 인생네컷 photo booth: thick ink outlines, hard offset shadows, sticker labels. Single light look by choice. */
 :root {
-  --bg: #0b0a1a;
-  --panel: #15132b;
-  --line: #2b2752;
-  --fg: #eeeaff;
-  --muted: #9d97c7;
-  --scan: #4df3ff;
-  --hot: #ff4fa3;
-  --warn: #ffcc4d;
-  --font-display: "Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
-  color-scheme: dark;
+  --bg: #f1ecff;
+  --dot: #d9cffb;
+  --paper: #ffffff;
+  --ink: #17122b;
+  --muted: #645c80;
+  --pink: #ff4f9a;
+  --butter: #ffe066;
+  --lilac: #e6dcff;
+  --mint: #9ef0c9;
+  --font-display: "Gasoek One", "Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-body: "Gothic A1", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --line: 2.5px solid var(--ink);
+  --shadow: 5px 5px 0 var(--ink);
+  color-scheme: light;
 }
 [hidden] { display: none !important; }
 html, body { min-height: 100%; }
 body {
   margin: 0;
-  background:
-    radial-gradient(60rem 30rem at 50% -10%, rgba(77, 243, 255, .10), transparent 70%),
-    radial-gradient(40rem 30rem at 100% 100%, rgba(255, 79, 163, .10), transparent 70%),
-    var(--bg);
-  color: var(--fg);
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--dot) 1.4px, transparent 1.6px);
+  background-size: 18px 18px;
+  color: var(--ink);
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.55;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 20px 40px;
+  padding-block: 24px 44px;
 }
-.wrap { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.wrap { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 .display { font-family: var(--font-display); font-weight: 400; letter-spacing: -.01em; text-wrap: balance; }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--scan); }
+.note { font-size: 12.5px; color: var(--muted); }
 
+/* header */
+.tag {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  background: var(--butter); border: var(--line); border-radius: 999px; padding: 4px 12px;
+  transform: rotate(-2deg); box-shadow: 3px 3px 0 var(--ink);
+}
+.hero-title { font-size: 38px; line-height: 1.12; margin: 6px 0 0; }
+.hero-title mark { background: linear-gradient(transparent 55%, var(--pink) 55%, var(--pink) 92%, transparent 92%); color: inherit; padding: 0 2px; }
+.hero-sub { margin: 0; color: var(--muted); font-size: 14px; }
+
+/* photo booth */
+.booth { background: var(--paper); border: var(--line); border-radius: 28px; box-shadow: var(--shadow); padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.booth-bar { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; }
+.rec { display: inline-flex; align-items: center; gap: 6px; }
+.rec i { width: 9px; height: 9px; border-radius: 50%; background: var(--pink); border: 1.5px solid var(--ink); animation: blink 1.2s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .25; } }
 .bay {
   position: relative; width: 100%; aspect-ratio: 3 / 4; max-width: 100%;
-  border-radius: 22px; overflow: hidden; background: #07061a;
-  border: 1px solid var(--line);
-  box-shadow: 0 0 0 1px rgba(77,243,255,.06), 0 20px 60px -20px rgba(77,243,255,.25);
+  border-radius: 20px; overflow: hidden; border: var(--line);
+  background: linear-gradient(160deg, #ffd6ea 0%, var(--lilac) 55%, #d6f1ff 100%);
 }
 .bay video, .bay canvas, .bay .idle { position: absolute; inset: 0; width: 100%; height: 100%; }
 .bay video { object-fit: cover; transform: scaleX(-1); }
-.bay .corner { position: absolute; width: 26px; height: 26px; border-color: var(--scan); border-style: solid; opacity: .8; pointer-events: none; }
-.bay .c1 { top: 14px; left: 14px; border-width: 2px 0 0 2px; border-top-left-radius: 8px; }
-.bay .c2 { top: 14px; right: 14px; border-width: 2px 2px 0 0; border-top-right-radius: 8px; }
-.bay .c3 { bottom: 14px; left: 14px; border-width: 0 0 2px 2px; border-bottom-left-radius: 8px; }
-.bay .c4 { bottom: 14px; right: 14px; border-width: 0 2px 2px 0; border-bottom-right-radius: 8px; }
+.bay .corner { position: absolute; width: 26px; height: 26px; border-color: #fff; border-style: solid; pointer-events: none; filter: drop-shadow(1px 1px 0 var(--ink)); }
+.bay .c1 { top: 14px; left: 14px; border-width: 3px 0 0 3px; border-top-left-radius: 10px; }
+.bay .c2 { top: 14px; right: 14px; border-width: 3px 3px 0 0; border-top-right-radius: 10px; }
+.bay .c3 { bottom: 14px; left: 14px; border-width: 0 0 3px 3px; border-bottom-left-radius: 10px; }
+.bay .c4 { bottom: 14px; right: 14px; border-width: 0 3px 3px 0; border-bottom-right-radius: 10px; }
 .guide-oval {
   position: absolute; left: 50%; top: 47%; width: 58%; aspect-ratio: 3 / 4; transform: translate(-50%, -50%);
-  border: 2px dashed rgba(77,243,255,.55); border-radius: 50%; pointer-events: none;
+  border: 3px dashed rgba(255,255,255,.9); border-radius: 50%; pointer-events: none;
 }
-.idle { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 24px; color: var(--muted); }
-.idle .glyph { font-size: 64px; filter: drop-shadow(0 0 18px rgba(77,243,255,.5)); }
-.countdown { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-display); font-size: 120px; color: var(--fg); text-shadow: 0 0 30px var(--scan); pointer-events: none; }
+.idle { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 28px; }
+.idle .glyph { font-size: 70px; line-height: 1; animation: bob 2.4s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(-6px) rotate(-4deg); } }
+.idle .idle-title { font-size: 22px; }
+.idle .note { max-width: 24em; }
+.countdown { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-display); font-size: 130px; color: #fff; -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; pointer-events: none; }
 .scan-hud {
-  position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 10px 14px; border-radius: 12px;
-  background: rgba(11,10,26,.78); border: 1px solid rgba(77,243,255,.35); backdrop-filter: blur(6px);
+  position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 10px 14px; border-radius: 16px;
+  background: var(--paper); border: var(--line); box-shadow: 3px 3px 0 var(--ink);
   display: flex; flex-direction: column; gap: 8px;
 }
-.scan-hud .msg { font-family: var(--font-mono); font-size: 13px; color: var(--scan); min-height: 1.4em; }
-.scan-track { height: 4px; border-radius: 4px; background: rgba(77,243,255,.15); overflow: hidden; }
-.scan-track > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--scan), var(--hot)); }
+.scan-hud .msg { font-weight: 800; font-size: 13.5px; min-height: 1.4em; }
+.scan-track { height: 10px; border-radius: 10px; background: var(--lilac); border: 2px solid var(--ink); overflow: hidden; }
+.scan-track > i { display: block; height: 100%; width: 0; background: repeating-linear-gradient(-45deg, var(--pink) 0 8px, #ff7db5 8px 16px); }
 
+.status { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--butter); border: 2px solid var(--ink); flex: none; }
+.status-dot.ok { background: var(--mint); }
+.status-dot.err { background: var(--pink); }
+
+/* buttons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 52px; padding: 0 18px; border-radius: 14px; font-weight: 700; font-size: 15px;
-  border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer;
-  transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  min-height: 54px; padding: 0 18px; border-radius: 16px; font-weight: 800; font-size: 15.5px;
+  border: var(--line); background: var(--paper); color: var(--ink); cursor: pointer;
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: transform .08s ease, box-shadow .08s ease, background .12s ease;
 }
-.btn:hover { border-color: var(--scan); }
-.btn:active { transform: scale(.98); }
-.btn:focus-visible { outline: 2px solid var(--scan); outline-offset: 2px; }
-.btn-primary { background: linear-gradient(135deg, var(--scan), #8a7dff 55%, var(--hot)); color: #0b0a1a; border: 0; }
-.btn-primary:hover { filter: brightness(1.08); }
-.btn[disabled] { opacity: .5; cursor: not-allowed; }
-.btn.pulse { animation: pulse 1.6s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,79,163,.0); } 50% { box-shadow: 0 0 0 6px rgba(255,79,163,.35); } }
+.btn:hover { background: #faf7ff; }
+.btn:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
+.btn:focus-visible { outline: 3px solid var(--pink); outline-offset: 3px; }
+.btn-primary { background: var(--pink); color: #fff; }
+.btn-primary:hover { background: #ff3d8e; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; box-shadow: 4px 4px 0 var(--ink); transform: none; }
+.btn.pulse { animation: wiggle 1.4s ease-in-out infinite; background: var(--butter); }
+@keyframes wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; }
+.check input { width: 18px; height: 18px; accent-color: var(--pink); }
 
-.note { font-size: 12.5px; color: var(--muted); }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 10px var(--warn); flex: none; }
-.status-dot.ok { background: var(--scan); box-shadow: 0 0 10px var(--scan); }
-.status-dot.err { background: var(--hot); box-shadow: 0 0 10px var(--hot); }
-
-/* result card */
+/* result card: a booth print */
 .card {
-  position: relative; border-radius: 26px; overflow: hidden; padding: 22px 20px 20px;
-  color: #fff; display: flex; flex-direction: column; gap: 16px;
-  background: var(--card-grad, linear-gradient(160deg, #6a5cff, #ff4fa3));
-  box-shadow: 0 30px 80px -30px rgba(255,79,163,.45);
+  position: relative; background: var(--paper); border: var(--line); border-radius: 28px; box-shadow: 6px 6px 0 var(--ink);
+  display: flex; flex-direction: column; overflow: hidden;
 }
-.card::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background:
-    radial-gradient(20rem 12rem at 85% 0%, rgba(255,255,255,.28), transparent 60%),
-    repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 4px);
+.card .band { background: var(--card-grad, linear-gradient(135deg, #ff8cc6, #b69bff)); border-bottom: var(--line); padding: 16px 14px 14px; position: relative; }
+.card .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.card .face { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; background: var(--paper); border: var(--line); border-radius: 14px; padding: 6px 6px 4px; }
+.card .face:first-child { transform: rotate(-1.5deg); }
+.card .face:last-child { transform: rotate(1.5deg); }
+.card .face img { width: 100%; aspect-ratio: 4 / 5; max-width: 100%; object-fit: cover; object-position: 50% 22%; border-radius: 9px; background: var(--lilac); display: block; }
+.card .face figcaption { text-align: center; font-size: 13px; font-weight: 800; }
+.card .match {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -62%) rotate(-10deg);
+  width: 76px; height: 76px; border-radius: 50%; background: var(--butter); border: var(--line); box-shadow: 3px 3px 0 var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; z-index: 2;
 }
-.card > * { position: relative; }
-.card .duo { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
-.card .face { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.card .face img { width: 100%; aspect-ratio: 4 / 5; max-width: 100%; object-fit: cover; object-position: 50% 22%; border-radius: 18px; border: 3px solid rgba(255,255,255,.9); background: rgba(0,0,0,.25); }
-.card .face figcaption { text-align: center; font-size: 12.5px; font-weight: 700; }
-.card .match { width: 62px; height: 62px; border-radius: 50%; background: #fff; color: #1a1033; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; box-shadow: 0 6px 20px rgba(0,0,0,.25); margin-bottom: 22px; }
-.card .match b { font-size: 17px; }
-.card .match span { font-size: 10.5px; font-weight: 700; }
+.card .match b { font-size: 19px; }
+.card .match span { font-size: 11px; font-weight: 800; }
+.card .body { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 16px; }
 .card .top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-.card .emoji { font-size: 30px; line-height: 1; letter-spacing: 2px; flex: none; }
-.card .credit { font-size: 10.5px; opacity: .8; line-height: 1.4; }
-.card .credit a { color: inherit; text-decoration: underline; }
-.card .who { font-size: 40px; line-height: 1.05; }
-.card .sub { font-size: 12px; font-family: var(--font-mono); letter-spacing: .12em; text-transform: uppercase; opacity: .85; }
-.card .quote { font-size: 17px; font-weight: 700; line-height: 1.45; background: rgba(0,0,0,.22); border-radius: 14px; padding: 12px 14px; }
+.card .sub { font-size: 12px; font-weight: 800; color: var(--muted); }
+.card .who { font-size: 44px; line-height: 1.05; margin-top: 2px; }
+.card .emoji { font-size: 30px; line-height: 1; letter-spacing: 3px; flex: none; }
+.card .quote { position: relative; font-size: 16.5px; font-weight: 800; line-height: 1.5; background: var(--lilac); border: var(--line); border-radius: 18px; padding: 12px 14px; }
+.card .quote::before {
+  content: ""; position: absolute; left: 26px; top: -11px; width: 18px; height: 18px; background: var(--lilac);
+  border-left: var(--line); border-top: var(--line); transform: rotate(45deg); border-top-left-radius: 4px;
+}
 .card .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.card .metric { background: rgba(0,0,0,.24); border-radius: 14px; padding: 10px 12px; min-width: 0; }
-.card .metric b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 1.1; }
-.card .metric span { font-size: 11.5px; opacity: .85; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { font-size: 12.5px; font-weight: 700; padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.35); }
-.chip.solid { background: #fff; color: #1a1033; border-color: #fff; }
-.stats { display: flex; flex-direction: column; gap: 9px; }
-.stat-row { display: grid; grid-template-columns: 7.2em 1fr 2.4em; gap: 10px; align-items: center; font-size: 12.5px; font-weight: 700; }
-.stat-row .bar { height: 9px; border-radius: 9px; background: rgba(0,0,0,.28); overflow: hidden; }
-.stat-row .bar i { display: block; height: 100%; width: 0; border-radius: 9px; background: #fff; transition: width 1.1s cubic-bezier(.2,.8,.2,1); }
+.card .metric { border: var(--line); border-radius: 16px; padding: 10px 12px; min-width: 0; background: var(--paper); }
+.card .metric:nth-child(2) { background: var(--butter); }
+.card .metric b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 27px; line-height: 1.15; }
+.card .metric span { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.card .metric:nth-child(2) span { color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 12.5px; font-weight: 800; padding: 5px 11px; border-radius: 999px; background: var(--paper); border: 2px solid var(--ink); }
+.chip:nth-child(odd) { transform: rotate(-1.5deg); }
+.chip:nth-child(even) { transform: rotate(1.5deg); }
+.chip.solid { background: var(--mint); }
+.stats { display: flex; flex-direction: column; gap: 10px; }
+.stat-row { display: grid; grid-template-columns: 7.4em 1fr 2.4em; gap: 10px; align-items: center; font-size: 12.5px; font-weight: 800; }
+.stat-row .bar { height: 14px; border-radius: 14px; background: var(--lilac); border: 2px solid var(--ink); overflow: hidden; }
+.stat-row .bar i { display: block; height: 100%; width: 0; background: var(--pink); border-right: 2px solid var(--ink); transition: width 1.1s cubic-bezier(.2,.8,.2,1); }
+.stat-row:nth-child(2) .bar i { background: #b69bff; }
+.stat-row:nth-child(3) .bar i { background: #ffb36b; }
+.stat-row:nth-child(4) .bar i { background: var(--mint); }
 .stat-row .v { text-align: right; font-family: var(--font-mono); }
-.card .foot { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 10.5px; opacity: .75; letter-spacing: .08em; }
+.card .credit { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+.card .credit a { color: inherit; text-decoration: underline; }
+.card .foot { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; border-top: 2px dashed var(--ink); padding-top: 12px; }
 
 /* modal */
-.modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(5,4,15,.72); backdrop-filter: blur(4px); }
-.modal-box { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 24px 20px 18px; text-align: center; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.5); animation: pop .25s ease-out; }
-.modal-box .big { font-size: 52px; }
-@keyframes pop { from { transform: scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
+.modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(23,18,43,.45); backdrop-filter: blur(3px); }
+.modal-box { width: 100%; max-width: 360px; background: var(--paper); border: var(--line); border-radius: 24px; padding: 24px 20px 20px; text-align: center; display: flex; flex-direction: column; gap: 10px; box-shadow: 6px 6px 0 var(--ink); animation: pop .25s ease-out; }
+.modal-box .big { font-size: 56px; line-height: 1.1; }
+@keyframes pop { from { transform: scale(.9) rotate(-2deg); opacity: 0; } to { transform: none; opacity: 1; } }
 
-.fade-in { animation: fadeUp .5s ease-out both; }
-@keyframes fadeUp { from { transform: translateY(12px); opacity: .0; } to { transform: none; opacity: 1; } }
+.fade-in { animation: popIn .45s cubic-bezier(.2,1.3,.4,1) both; }
+@keyframes popIn { from { transform: translateY(14px) scale(.97); opacity: .0; } to { transform: none; opacity: 1; } }
 
+@media (max-width: 380px) {
+  .hero-title { font-size: 32px; }
+  .card .who { font-size: 38px; }
+  .card .match { width: 64px; height: 64px; }
+  .card .match b { font-size: 16px; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
@@ -155,31 +196,34 @@ body {
 <body>
 <div class="wrap">
 
-  <header class="flex flex-col gap-1">
-    <span class="eyebrow">Face Ratio Lab · IPD 63mm anchor</span>
-    <h1 class="display text-[34px] leading-tight m-0">셀카 한 장으로 재는<br><span style="color:var(--scan)">내 얼굴 크기</span> & 닮은 연예인</h1>
-    <p class="note m-0">동공 사이 거리(성인 평균 6.3cm)를 자 삼아 얼굴 길이를 환산하고, 이목구비 비율로 분위기 타입을 골라 드려요.</p>
+  <header class="flex flex-col gap-2">
+    <span class="tag">📸 Face Booth · 동공 거리 6.3cm 기준</span>
+    <h1 class="display hero-title">내 얼굴,<br><mark>연예인</mark>으로 치면<br>누구 닮았지?</h1>
+    <p class="hero-sub">셀카 한 장이면 얼굴 길이를 재고, 분위기가 닮은 셀럽까지 찾아 드려요.</p>
   </header>
 
-  <section class="bay" id="bay" aria-label="촬영 화면">
-    <div class="idle" id="idle">
-      <div class="glyph">🫥</div>
-      <div class="display text-[22px]" style="color:var(--fg)">정면 셀카를 준비해 주세요</div>
-      <div class="note">정면이 아니어도 결과는 나와요. 정면일수록, 이마가 보일수록 더 정확해져요</div>
-    </div>
-    <video id="video" playsinline muted hidden></video>
-    <canvas id="photo" hidden></canvas>
-    <canvas id="overlay" hidden></canvas>
-    <div class="guide-oval" id="guide" hidden></div>
-    <div class="countdown" id="countdown" hidden></div>
-    <span class="corner c1"></span><span class="corner c2"></span><span class="corner c3"></span><span class="corner c4"></span>
-    <div class="scan-hud" id="hud" hidden>
-      <div class="msg" id="hudMsg">스캔 준비 중...</div>
-      <div class="scan-track"><i id="hudBar"></i></div>
+  <section class="booth">
+    <div class="booth-bar"><span class="rec"><i></i>REC</span><span>FACE BOOTH No.63</span></div>
+    <div class="bay" id="bay" aria-label="촬영 화면">
+      <div class="idle" id="idle">
+        <div class="glyph">🤳</div>
+        <div class="display idle-title">찰칵 한 번이면 끝!</div>
+        <div class="note">정면이 아니어도 결과는 나와요. 정면일수록, 이마가 보일수록 더 정확해져요</div>
+      </div>
+      <video id="video" playsinline muted hidden></video>
+      <canvas id="photo" hidden></canvas>
+      <canvas id="overlay" hidden></canvas>
+      <div class="guide-oval" id="guide" hidden></div>
+      <div class="countdown" id="countdown" hidden></div>
+      <span class="corner c1"></span><span class="corner c2"></span><span class="corner c3"></span><span class="corner c4"></span>
+      <div class="scan-hud" id="hud" hidden>
+        <div class="msg" id="hudMsg">스캔 준비 중...</div>
+        <div class="scan-track"><i id="hudBar"></i></div>
+      </div>
     </div>
   </section>
 
-  <div class="flex items-center gap-2 note" id="statusLine">
+  <div class="status" id="statusLine">
     <span class="status-dot" id="statusDot"></span>
     <span id="statusText">AI 얼굴 모델 불러오는 중...</span>
   </div>
@@ -192,35 +236,39 @@ body {
     <input id="fileInput" type="file" accept="image/*" class="hidden">
   </section>
 
-  <section id="resultWrap" class="flex flex-col gap-3" hidden>
+  <section id="resultWrap" class="flex flex-col gap-4" hidden>
     <div class="card fade-in" id="card">
-      <div class="duo">
-        <figure class="face"><img id="rThumb" alt="내 사진"><figcaption>나</figcaption></figure>
-        <div class="match"><b class="mono" id="rMatch">-</b><span>닮음</span></div>
-        <figure class="face"><img id="rCeleb" alt="" crossorigin="anonymous"><figcaption id="rCelebCap">-</figcaption></figure>
-      </div>
-      <div class="top">
-        <div class="min-w-0">
-          <div class="sub">나와 얼굴 분위기가 닮은 셀럽</div>
-          <div class="display who" id="rName">-</div>
+      <div class="band">
+        <div class="duo">
+          <figure class="face"><img id="rThumb" alt="내 사진"><figcaption>나</figcaption></figure>
+          <figure class="face"><img id="rCeleb" alt="" crossorigin="anonymous"><figcaption id="rCelebCap">-</figcaption></figure>
         </div>
-        <div class="emoji" id="rEmoji"></div>
+        <div class="match"><b class="mono" id="rMatch">-</b><span>닮음</span></div>
       </div>
-      <div class="quote" id="rQuote">-</div>
-      <div class="metrics">
-        <div class="metric"><b class="mono" id="rLen">-</b><span>추정 얼굴 세로 (이마~턱)</span></div>
-        <div class="metric"><b id="rTop">-</b><span>대한민국 소두 랭킹</span></div>
+      <div class="body">
+        <div class="top">
+          <div class="min-w-0">
+            <div class="sub">나와 얼굴 분위기가 닮은 셀럽은</div>
+            <div class="display who" id="rName">-</div>
+          </div>
+          <div class="emoji" id="rEmoji"></div>
+        </div>
+        <div class="quote" id="rQuote">-</div>
+        <div class="metrics">
+          <div class="metric"><b id="rLen">-</b><span>추정 얼굴 세로 (이마~턱)</span></div>
+          <div class="metric"><b id="rTop">-</b><span>대한민국 소두 랭킹</span></div>
+        </div>
+        <div class="chips" id="rChips"></div>
+        <div class="stats" id="rStats"></div>
+        <div class="credit" id="rCredit"></div>
+        <div class="foot"><span>FACE BOOTH No.63</span><span id="rStamp"></span></div>
       </div>
-      <div class="chips" id="rChips"></div>
-      <div class="stats" id="rStats"></div>
-      <div class="credit" id="rCredit"></div>
-      <div class="foot"><span>FACE RATIO LAB</span><span id="rStamp"></span></div>
     </div>
-    <label class="flex items-center gap-2 note cursor-pointer select-none" for="incPhoto">
-      <input type="checkbox" id="incPhoto" checked class="accent-pink-500 w-4 h-4"> 저장할 때 내 사진도 카드에 넣기
+    <label class="check" for="incPhoto">
+      <input type="checkbox" id="incPhoto" checked> 저장할 때 내 사진도 카드에 넣기
     </label>
     <div class="grid grid-cols-2 gap-3">
-      <button class="btn btn-primary" id="btnSave" type="button">💾 카드 이미지 저장</button>
+      <button class="btn btn-primary" id="btnSave" type="button">💾 카드 저장</button>
       <button class="btn" id="btnRetry" type="button">🔄 다시 하기</button>
     </div>
     <p class="note m-0" id="saveMsg" aria-live="polite"></p>
@@ -237,7 +285,7 @@ body {
     <div class="big" id="mEmoji">🙈</div>
     <div class="display text-[22px]" id="mTitle">얼굴이 숨었어요</div>
     <p class="note m-0 text-[14px]" id="mBody">-</p>
-    <div class="grid grid-cols-2 gap-2 mt-2">
+    <div class="grid grid-cols-2 gap-3 mt-2">
       <button class="btn btn-primary" id="mRetake" type="button">📸 다시 찍기</button>
       <button class="btn" id="mUpload" type="button">🖼 다른 사진</button>
     </div>
@@ -268,7 +316,7 @@ body {
   // ---------- celeb DB ----------
   // shape: sharp | oval | round, bold: target 이목구비 자기주장력 (0~100)
   const GROUPS = {
-    A: { label: "소두 + 화려한 이목구비", grad: "linear-gradient(160deg,#ff5fa8 0%,#a35cff 55%,#5b6cff 100%)", celebs: [
+    A: { label: "소두 + 화려한 이목구비", grad: "linear-gradient(135deg,#ff8cc6 0%,#b69bff 100%)", celebs: [
       { name: "장원영", id: "wonyoung", emoji: "💖👑✨", shape: "oval", bold: 88, quote: "원근법을 무시하는 비현실적 비율! 뒤로 가기 금지령 발동",
         photo: "thumb/8/85/Jang_Won-young_at_the_Bulgari_HDD_Seoul%2C_December_4%2C_2025.png/500px-Jang_Won-young_at_the_Bulgari_HDD_Seoul%2C_December_4%2C_2025.png",
         page: "File:Jang_Won-young_at_the_Bulgari_HDD_Seoul,_December_4,_2025.png", credit: "K-POPIT 케이팝잇", license: "CC BY 4.0" },
@@ -282,7 +330,7 @@ body {
         photo: "thumb/d/d4/BTS's_V_20251004_04.jpg/500px-BTS's_V_20251004_04.jpg",
         page: "File:BTS%27s_V_20251004_04.jpg", credit: "티비텐", license: "CC BY 3.0" },
     ]},
-    B: { label: "소두 + 담백·청순 분위기", grad: "linear-gradient(160deg,#5fd6c0 0%,#7fb6ff 50%,#c99bff 100%)", celebs: [
+    B: { label: "소두 + 담백·청순 분위기", grad: "linear-gradient(135deg,#9ef0c9 0%,#8fd3ff 100%)", celebs: [
       { name: "안유진", id: "yujin", emoji: "🐶🍑🎀", shape: "round", bold: 46, quote: "작은 얼굴에 오밀조밀 다 들어있는 상견례 프리패스상",
         photo: "thumb/6/6a/03102026_IVE_YUJIN_Airport_Departure_18.jpg/500px-03102026_IVE_YUJIN_Airport_Departure_18.jpg",
         page: "File:03102026_IVE_YUJIN_Airport_Departure_18.jpg", credit: "K-POPIT 케이팝잇", license: "CC BY 4.0" },
@@ -296,7 +344,7 @@ body {
         photo: "thumb/3/37/Jung_Hae-in_20260827.png/500px-Jung_Hae-in_20260827.png",
         page: "File:Jung_Hae-in_20260827.png", credit: "K-POPIT 케이팝잇", license: "CC BY 3.0" },
     ]},
-    C: { label: "황금 비율 + 개성·힙 분위기", grad: "linear-gradient(160deg,#ff8a3d 0%,#e2366b 45%,#2a1748 100%)", celebs: [
+    C: { label: "황금 비율 + 개성·힙 분위기", grad: "linear-gradient(135deg,#ffb36b 0%,#ff6f91 100%)", celebs: [
       { name: "제니", id: "jennie", emoji: "🐱🖤💋", shape: "sharp", bold: 80, quote: "크기보다 분위기로 압도하는 연예인 포스. 걸어오는 순간 화보",
         photo: "thumb/7/7a/20260526_Jennie_Kim_04.jpg/500px-20260526_Jennie_Kim_04.jpg",
         page: "File:20260526_Jennie_Kim_04.jpg", credit: "티비텐", license: "CC BY 4.0" },
@@ -310,7 +358,7 @@ body {
         photo: "thumb/9/9f/Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_%28cropped%29.jpg/500px-Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_%28cropped%29.jpg",
         page: "File:Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_(cropped).jpg", credit: "Desmond Herzfelder", license: "CC BY 4.0" },
     ]},
-    D: { label: "친근한 크기 + 유쾌한 분위기", grad: "linear-gradient(160deg,#ffcf3d 0%,#ff8a3d 50%,#ff5a6e 100%)", celebs: [
+    D: { label: "친근한 크기 + 유쾌한 분위기", grad: "linear-gradient(135deg,#ffe066 0%,#ffa95e 100%)", celebs: [
       { name: "강호동", id: "kanghodong", emoji: "🐻🍖💪", shape: "round", bold: 76, quote: "어딜 가나 존재감 100%! 화면을 꽉 채우는 천하장사 에너지", pos: "50% 4%",
         photo: "thumb/d/d3/%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg/500px-%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg",
         page: "File:%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg", credit: "K-POPIT 케이팝잇", license: "CC BY 3.0" },
@@ -659,18 +707,18 @@ body {
           // no landmarks: pulse a guessing oval instead of the mesh
           const rx = Math.min(W, H) * 0.28 * (1 + 0.04 * Math.sin(t * 18));
           ctx.save();
-          ctx.strokeStyle = "rgba(77,243,255,0.8)"; ctx.shadowColor = "#4df3ff"; ctx.shadowBlur = 12 * s;
+          ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.shadowColor = "#ff4f9a"; ctx.shadowBlur = 12 * s;
           ctx.lineWidth = 2 * s; ctx.setLineDash([8 * s, 6 * s]); ctx.lineDashOffset = -t * 200;
           ctx.beginPath(); ctx.ellipse(W / 2, H * 0.45, rx, rx * 1.3, 0, 0, Math.PI * 2); ctx.stroke();
           ctx.restore();
-          label(ctx, "AI 어림짐작 모드", W / 2, H * 0.45 - rx * 1.3 - 14 * s, "#4df3ff", s);
+          label(ctx, "AI 어림짐작 모드", W / 2, H * 0.45 - rx * 1.3 - 14 * s, "#ffe066", s);
         }
 
         // mesh, drawn top to bottom
         const n = Math.floor(order.length * Math.min(1, t * 1.25));
         ctx.lineWidth = 0.7 * s;
-        ctx.strokeStyle = "rgba(77,243,255,0.55)";
-        ctx.shadowColor = "#4df3ff";
+        ctx.strokeStyle = "rgba(255,255,255,0.75)";
+        ctx.shadowColor = "#ff4f9a";
         ctx.shadowBlur = 4 * s;
         ctx.beginPath();
         for (let i = 0; i < n; i++) {
@@ -701,7 +749,7 @@ body {
           const a = pts[LM.top], b = pts[LM.chin];
           const off = (pts[LM.cheekL].x - pts[LM.cheekR].x) * 0.62;
           const x = (a.x + b.x) / 2 + off;
-          ctx.strokeStyle = "#ffffff"; ctx.shadowColor = "#4df3ff"; ctx.lineWidth = 1.5 * s;
+          ctx.strokeStyle = "#ffffff"; ctx.shadowColor = "#ff4f9a"; ctx.lineWidth = 1.5 * s;
           ctx.setLineDash([6 * s, 5 * s]);
           ctx.beginPath(); ctx.moveTo(x, a.y); ctx.lineTo(x, b.y); ctx.stroke();
           ctx.setLineDash([]);
@@ -712,8 +760,8 @@ body {
         // sweeping scan line
         const sy = (Math.sin(t * Math.PI * 3 - Math.PI / 2) * 0.5 + 0.5) * H;
         const g = ctx.createLinearGradient(0, sy - 40 * s, 0, sy + 4 * s);
-        g.addColorStop(0, "rgba(77,243,255,0)");
-        g.addColorStop(1, "rgba(77,243,255,0.45)");
+        g.addColorStop(0, "rgba(255,79,154,0)");
+        g.addColorStop(1, "rgba(255,79,154,0.45)");
         ctx.shadowBlur = 0;
         ctx.fillStyle = g;
         ctx.fillRect(0, sy - 40 * s, W, 44 * s);
@@ -728,7 +776,7 @@ body {
   function label(ctx, text, x, y, color, s) {
     ctx.save();
     ctx.shadowBlur = 0;
-    ctx.font = `600 ${Math.round(12 * s)}px "IBM Plex Mono", monospace`;
+    ctx.font = `600 ${Math.round(12 * s)}px "Space Mono", monospace`;
     const w = ctx.measureText(text).width + 10 * s;
     ctx.fillStyle = "rgba(7,6,26,0.8)";
     ctx.fillRect(x - w / 2, y - 10 * s, w, 18 * s);
@@ -841,108 +889,161 @@ body {
     const ctx = c.getContext("2d");
     await document.fonts.ready;
 
-    const colors = (r.group.grad.match(/#[0-9a-f]{6}/gi) || ["#6a5cff", "#ff4fa3"]);
-    const g = ctx.createLinearGradient(0, 0, W * 0.6, H);
+    const INK = "#17122b", PAPER = "#ffffff", LILAC = "#e6dcff", BUTTER = "#ffe066", MUTED = "#645c80";
+    const disp = '"Gasoek One", "Black Han Sans", sans-serif';
+    const body = '"Gothic A1", sans-serif';
+    const mono = '"Space Mono", monospace';
+    const box = (x, y, w, h, rad, fill, lw = 6) => {
+      roundRect(ctx, x, y, w, h, rad);
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (lw) { ctx.strokeStyle = INK; ctx.lineWidth = lw; ctx.stroke(); }
+    };
+
+    // dotted lilac backdrop
+    ctx.fillStyle = "#f1ecff"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#d9cffb";
+    for (let yy = 12; yy < H; yy += 36) for (let xx = 12; xx < W; xx += 36) { ctx.beginPath(); ctx.arc(xx, yy, 3, 0, Math.PI * 2); ctx.fill(); }
+
+    // header sticker
+    ctx.save();
+    ctx.translate(60, 70); ctx.rotate(-0.03);
+    ctx.font = `700 26px ${mono}`;
+    const tagText = "📸 FACE BOOTH No.63";
+    const tw = ctx.measureText(tagText).width + 48;
+    box(6, 6, tw, 56, 28, INK, 0);
+    box(0, 0, tw, 56, 28, BUTTER, 5);
+    ctx.fillStyle = INK; ctx.fillText(tagText, 24, 37);
+    ctx.restore();
+
+    // the print
+    const CX = 60, CY = 160, CW = W - 120, CH = 1660;
+    box(CX + 16, CY + 16, CW, CH, 48, INK, 0);
+    ctx.save();
+    roundRect(ctx, CX, CY, CW, CH, 48); ctx.clip();
+    ctx.fillStyle = PAPER; ctx.fillRect(CX, CY, CW, CH);
+
+    // gradient band with the two portraits
+    const BH = 620;
+    const colors = r.group.grad.match(/#[0-9a-f]{6}/gi) || ["#ff8cc6", "#b69bff"];
+    const g = ctx.createLinearGradient(CX, CY, CX + CW, CY + BH);
     colors.forEach((col, i) => g.addColorStop(i / Math.max(1, colors.length - 1), col));
-    ctx.fillStyle = g;
-    roundRect(ctx, 0, 0, W, H, 0); ctx.fill();
-    for (let y = 0; y < H; y += 8) { ctx.fillStyle = "rgba(255,255,255,0.03)"; ctx.fillRect(0, y, W, 2); }
+    ctx.fillStyle = g; ctx.fillRect(CX, CY, CW, BH);
+    ctx.restore();
+    ctx.strokeStyle = INK; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(CX, CY + BH); ctx.lineTo(CX + CW, CY + BH); ctx.stroke();
 
-    const P = 80;
-    let y = 90;
-    const disp = '"Black Han Sans", sans-serif';
-    const body = '"IBM Plex Sans KR", sans-serif';
-    const mono = '"IBM Plex Mono", monospace';
-
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.font = `600 26px ${mono}`;
-    ctx.fillText("FACE RATIO LAB · 나와 닮은 셀럽", P, y);
-    y += 30;
-
-    // me vs celeb portraits
-    const pw = (W - P * 2 - 140) / 2, ph = pw * 1.25;
     const meImg = $("incPhoto").checked ? await loadImg(r.thumb).catch(() => null) : await loadImg(emojiTile("🙈"));
     const celebImg = await loadImg(celebSrc(r.celeb), true).catch(() => loadImg(emojiTile(r.celeb.emoji)));
     const pos = parseFloat(String(r.celeb.pos || "50% 22%").split(" ")[1]) / 100;
-    [[meImg, P, "나", 0.5], [celebImg, W - P - pw, r.celeb.name, pos]].forEach(([img, x, cap, py]) => {
+    const fw = (CW - 3 * 40) / 2, iw = fw - 28, ih = iw * 1.25, fh = ih + 90;
+    [[meImg, CX + 40, "나", 0.5, -0.035], [celebImg, CX + 80 + fw, r.celeb.name, pos, 0.035]].forEach(([img, x, cap, py, rot]) => {
+      const y = CY + 40;
       ctx.save();
-      roundRect(ctx, x, y, pw, ph, 36); ctx.clip();
-      ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(x, y, pw, ph);
-      if (img) drawCover(ctx, img, x, y, pw, ph, py);
+      ctx.translate(x + fw / 2, y + fh / 2); ctx.rotate(rot); ctx.translate(-fw / 2, -fh / 2);
+      box(0, 0, fw, fh, 26, PAPER, 6);
+      ctx.save();
+      roundRect(ctx, 14, 14, iw, ih, 16); ctx.clip();
+      ctx.fillStyle = LILAC; ctx.fillRect(14, 14, iw, ih);
+      if (img) drawCover(ctx, img, 14, 14, iw, ih, py);
       ctx.restore();
-      ctx.strokeStyle = "rgba(255,255,255,0.92)"; ctx.lineWidth = 7;
-      roundRect(ctx, x, y, pw, ph, 36); ctx.stroke();
-      ctx.fillStyle = "#fff"; ctx.font = `700 32px ${body}`; ctx.textAlign = "center";
-      ctx.fillText(cap, x + pw / 2, y + ph + 48);
-      ctx.textAlign = "left";
+      ctx.fillStyle = INK; ctx.font = `800 34px ${body}`; ctx.textAlign = "center";
+      ctx.fillText(cap, fw / 2, ih + 66);
+      ctx.restore();
     });
-    ctx.fillStyle = "#fff";
-    ctx.beginPath(); ctx.arc(W / 2, y + ph / 2, 68, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#1a1033"; ctx.textAlign = "center";
-    ctx.font = `600 40px ${mono}`; ctx.fillText(r.vibe + "%", W / 2, y + ph / 2 + 6);
-    ctx.font = `700 22px ${body}`; ctx.fillText("닮음", W / 2, y + ph / 2 + 38);
+
+    // match sticker
+    ctx.save();
+    ctx.translate(W / 2, CY + 40 + fh * 0.4); ctx.rotate(-0.17);
+    ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(8, 8, 92, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = BUTTER; ctx.beginPath(); ctx.arc(0, 0, 92, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.stroke();
+    ctx.fillStyle = INK; ctx.textAlign = "center";
+    ctx.font = `700 50px ${mono}`; ctx.fillText(r.vibe + "%", 0, 10);
+    ctx.font = `800 26px ${body}`; ctx.fillText("닮음", 0, 48);
+    ctx.restore();
     ctx.textAlign = "left";
-    y += ph + 80;
 
-    ctx.fillStyle = "#fff";
-    ctx.font = `120px ${disp}`;
-    ctx.fillText(r.celeb.name, P, y + 110);
-    ctx.font = `72px ${body}`; ctx.textAlign = "right";
-    ctx.fillText(r.celeb.emoji, W - P, y + 100);
+    // text body
+    const P = CX + 50, R = CX + CW - 50;
+    let y = CY + BH + 70;
+    ctx.fillStyle = MUTED; ctx.font = `800 30px ${body}`;
+    ctx.fillText("나와 얼굴 분위기가 닮은 셀럽은", P, y);
+    ctx.fillStyle = INK; ctx.font = `120px ${disp}`;
+    ctx.fillText(r.celeb.name, P, y + 130);
+    ctx.font = `70px ${body}`; ctx.textAlign = "right";
+    ctx.fillText(r.celeb.emoji, R, y + 115);
     ctx.textAlign = "left";
-    y += 160;
-
-    // quote box
-    ctx.font = `700 40px ${body}`;
-    const lines = wrapText(ctx, "“" + r.celeb.quote + "”", W - P * 2 - 60);
-    const qh = lines.length * 56 + 50;
-    ctx.fillStyle = "rgba(0,0,0,0.22)"; roundRect(ctx, P, y, W - P * 2, qh, 30); ctx.fill();
-    ctx.fillStyle = "#fff";
-    lines.forEach((ln, i) => ctx.fillText(ln, P + 30, y + 64 + i * 56));
-    y += qh + 30;
-
-    // metrics
-    const mw = (W - P * 2 - 24) / 2;
-    [[r.lenCm.toFixed(1) + "cm", "추정 얼굴 세로 (이마~턱)"], ["상위 " + r.topPct + "%", "대한민국 소두 랭킹"]].forEach(([big, small], i) => {
-      const x = P + i * (mw + 24);
-      ctx.fillStyle = "rgba(0,0,0,0.24)"; roundRect(ctx, x, y, mw, 150, 28); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.font = `76px ${disp}`; ctx.fillText(big, x + 28, y + 86);
-      ctx.font = `500 26px ${body}`; ctx.globalAlpha = 0.85; ctx.fillText(small, x + 28, y + 128); ctx.globalAlpha = 1;
-    });
     y += 180;
 
+    // speech bubble
+    ctx.font = `800 36px ${body}`;
+    const lines = wrapText(ctx, "“" + r.celeb.quote + "”", R - P - 60);
+    const qh = lines.length * 52 + 46;
+    box(P, y, R - P, qh, 30, LILAC, 6);
+    ctx.save();
+    ctx.translate(P + 60, y); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = LILAC; ctx.fillRect(-16, -16, 32, 32);
+    ctx.strokeStyle = INK; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(-16, 16); ctx.lineTo(-16, -16); ctx.lineTo(16, -16); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = INK;
+    lines.forEach((ln, i) => ctx.fillText(ln, P + 30, y + 62 + i * 52));
+    y += qh + 34;
+
+    // metrics
+    const mw = (R - P - 24) / 2;
+    [[r.lenCm.toFixed(1) + "cm", "추정 얼굴 세로 (이마~턱)", PAPER], ["상위 " + r.topPct + "%", "대한민국 소두 랭킹", BUTTER]].forEach(([big, small, fill], i) => {
+      const x = P + i * (mw + 24);
+      box(x, y, mw, 150, 28, fill, 6);
+      ctx.fillStyle = INK; ctx.font = `66px ${disp}`; ctx.fillText(big, x + 28, y + 84);
+      ctx.font = `700 25px ${body}`; ctx.fillText(small, x + 28, y + 126);
+    });
+    y += 184;
+
     // chips
-    ctx.font = `700 28px ${body}`;
+    ctx.font = `800 28px ${body}`;
     let cx = P;
     const chipTexts = [r.obj.tag, SHAPES[r.shape], r.flashy ? "✨ 화려한 이목구비형" : "🍃 담백한 매력형"];
     chipTexts.forEach((t, i) => {
       const w = ctx.measureText(t).width + 44;
-      if (cx + w > W - P) { cx = P; y += 64; }
-      ctx.fillStyle = i === 0 ? "#fff" : "rgba(255,255,255,0.22)";
-      roundRect(ctx, cx, y, w, 52, 26); ctx.fill();
-      ctx.fillStyle = i === 0 ? "#1a1033" : "#fff";
-      ctx.fillText(t, cx + 22, y + 36);
+      if (cx + w > R) { cx = P; y += 70; }
+      box(cx, y, w, 54, 27, i === 0 ? "#9ef0c9" : PAPER, 5);
+      ctx.fillStyle = INK; ctx.fillText(t, cx + 22, y + 37);
       cx += w + 14;
     });
-    y += 96;
+    y += 88;
 
     // stats
-    r.stats.forEach((s) => {
-      ctx.fillStyle = "#fff"; ctx.font = `700 30px ${body}`;
-      ctx.fillText(s.label, P, y + 22);
-      const bx = P + 330, bw = W - P - bx - 90;
-      ctx.fillStyle = "rgba(0,0,0,0.28)"; roundRect(ctx, bx, y, bw, 24, 12); ctx.fill();
-      ctx.fillStyle = "#fff"; roundRect(ctx, bx, y, bw * s.v / 100, 24, 12); ctx.fill();
-      ctx.font = `600 30px ${mono}`; ctx.textAlign = "right";
-      ctx.fillText(String(s.v), W - P, y + 24); ctx.textAlign = "left";
-      y += 62;
+    const barColors = ["#ff4f9a", "#b69bff", "#ffb36b", "#9ef0c9"];
+    r.stats.forEach((s, i) => {
+      ctx.fillStyle = INK; ctx.font = `800 29px ${body}`;
+      ctx.fillText(s.label, P, y + 26);
+      const bx = P + 310, bw = R - bx - 80;
+      box(bx, y, bw, 32, 16, LILAC, 5);
+      ctx.save(); roundRect(ctx, bx, y, bw, 32, 16); ctx.clip();
+      ctx.fillStyle = barColors[i]; ctx.fillRect(bx, y, bw * s.v / 100, 32);
+      ctx.restore();
+      box(bx, y, bw, 32, 16, null, 5);
+      ctx.fillStyle = INK; ctx.font = `700 30px ${mono}`; ctx.textAlign = "right";
+      ctx.fillText(String(s.v), R, y + 28); ctx.textAlign = "left";
+      y += 54;
     });
 
-    ctx.globalAlpha = 0.8; ctx.font = `500 22px ${body}`;
-    ctx.fillText(`${r.celeb.name} 사진: ${r.celeb.credit} · ${r.celeb.license} · Wikimedia Commons`, P, H - 100);
-    ctx.font = `500 22px ${mono}`;
-    ctx.fillText("재미용 추정치 · 동공 거리 6.3cm 기준 환산", P, H - 60);
-    ctx.globalAlpha = 1;
+    // perforated footer
+    const fy = Math.min(y + 56, CY + CH - 96);
+    ctx.fillStyle = MUTED; ctx.font = `600 21px ${body}`;
+    ctx.fillText(`${r.celeb.name} 사진: ${r.celeb.credit} · ${r.celeb.license} · Wikimedia Commons`, P, fy - 18);
+    ctx.setLineDash([16, 12]); ctx.strokeStyle = INK; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(P, fy); ctx.lineTo(R, fy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = INK; ctx.font = `700 24px ${mono}`;
+    ctx.fillText("FACE BOOTH No.63", P, fy + 52);
+    ctx.textAlign = "right"; ctx.fillText(new Date().toLocaleDateString("ko-KR"), R, fy + 52); ctx.textAlign = "left";
+
+    box(CX, CY, CW, CH, 48, null, 7);
+
+    ctx.fillStyle = MUTED; ctx.font = `700 22px ${body}`; ctx.textAlign = "center";
+    ctx.fillText("재미용 추정치 · 동공 거리 6.3cm 기준 환산", W / 2, H - 40);
+    ctx.textAlign = "left";
 
     const blob = await new Promise((res) => c.toBlob(res, "image/png"));
     const filename = `소두스캐너_${r.celeb.name}.png`;
