@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gasoek+One&family=Gothic+A1:wght@400;600;800&family=Space+Mono:wght@700&display=swap">
 <script src="https://cdn.tailwindcss.com/3.4.16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/dist/face-api.js"></script>
 <style>
 /* Layout: one phone-width column styled like a 인생네컷 photo booth: thick ink outlines, hard offset shadows, sticker labels. Single light look by choice. */
 :root {
@@ -150,6 +151,20 @@ body {
   content: ""; position: absolute; left: 26px; top: -11px; width: 18px; height: 18px; background: var(--lilac);
   border-left: var(--line); border-top: var(--line); transform: rotate(45deg); border-top-left-radius: 4px;
 }
+.top3-wrap { display: flex; flex-direction: column; gap: 8px; }
+.top3-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 2px solid var(--ink); border-radius: 999px; overflow: hidden; background: var(--paper); }
+.seg button { font: inherit; font-size: 12px; font-weight: 800; padding: 4px 10px; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.seg button + button { border-left: 2px solid var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.seg button:focus-visible { outline: 3px solid var(--pink); outline-offset: -3px; }
+.top3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pick { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 6px 6px 8px; border: 2px solid var(--ink); border-radius: 14px; background: var(--paper); font: inherit; font-size: 12px; font-weight: 800; color: var(--ink); cursor: pointer; transition: transform .08s ease, box-shadow .08s ease; }
+.pick img { width: 100%; aspect-ratio: 1; max-width: 100%; object-fit: cover; border-radius: 9px; background: var(--lilac); }
+.pick span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick .pct { font-family: var(--font-mono); font-size: 11px; }
+.pick[aria-pressed="true"] { background: var(--butter); box-shadow: 3px 3px 0 var(--ink); transform: translate(-1px, -1px); }
+.pick:focus-visible { outline: 3px solid var(--pink); outline-offset: 2px; }
 .card .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .card .metric { border: var(--line); border-radius: 16px; padding: 10px 12px; min-width: 0; background: var(--paper); }
 .card .metric:nth-child(2) { background: var(--butter); }
@@ -248,12 +263,21 @@ body {
       <div class="body">
         <div class="top">
           <div class="min-w-0">
-            <div class="sub">나와 얼굴 분위기가 닮은 셀럽은</div>
+            <div class="sub">나와 가장 닮은 셀럽은</div>
             <div class="display who" id="rName">-</div>
           </div>
           <div class="emoji" id="rEmoji"></div>
         </div>
         <div class="quote" id="rQuote">-</div>
+        <div class="top3-wrap">
+          <div class="top3-head">
+            <div class="sub">닮은꼴 TOP 3 · 눌러서 바꿔 보기</div>
+            <div class="seg" id="rGender" role="group" aria-label="비교할 셀럽">
+              <button type="button" data-g="F">여자</button><button type="button" data-g="M">남자</button><button type="button" data-g="all">전체</button>
+            </div>
+          </div>
+          <div class="top3" id="rTop3"></div>
+        </div>
         <div class="metrics">
           <div class="metric"><b id="rLen">-</b><span>추정 얼굴 세로 (이마~턱)</span></div>
           <div class="metric"><b id="rTop">-</b><span>대한민국 소두 랭킹</span></div>
@@ -303,8 +327,9 @@ body {
   const LEN_MEAN = 19.6, LEN_SD = 1.15;   // forehead-to-chin, cm
   const WID_MEAN = 13.9, WID_SD = 0.85;   // cheek-to-cheek, cm
   const SCAN_MS = 2500;
-  const COMMONS = "https://upload.wikimedia.org/wikipedia/commons/";
-  const celebSrc = window.CELEB_SRC || ((c) => COMMONS + c.photo);
+  const FACEAPI_MODELS = window.FACEAPI_MODELS || "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/model/";
+  const celebSrc = window.CELEB_SRC || ((c) => c.photo);
+  const GENDER_SURE = 0.6;       // below this, match against everyone
   const MAX_SIDE = 1024;
 
   const LM = {
@@ -313,66 +338,124 @@ body {
     mouthR: 61, mouthL: 291, nasion: 168, subnasal: 2, noseTip: 1, lipTop: 0,
   };
 
-  // ---------- celeb DB ----------
-  // shape: sharp | oval | round, bold: target 이목구비 자기주장력 (0~100)
+  // ---------- size groups (card color + label only) ----------
   const GROUPS = {
-    A: { label: "소두 + 화려한 이목구비", grad: "linear-gradient(135deg,#ff8cc6 0%,#b69bff 100%)", celebs: [
-      { name: "장원영", id: "wonyoung", emoji: "💖👑✨", shape: "oval", bold: 88, quote: "원근법을 무시하는 비현실적 비율! 뒤로 가기 금지령 발동",
-        photo: "thumb/8/85/Jang_Won-young_at_the_Bulgari_HDD_Seoul%2C_December_4%2C_2025.png/500px-Jang_Won-young_at_the_Bulgari_HDD_Seoul%2C_December_4%2C_2025.png",
-        page: "File:Jang_Won-young_at_the_Bulgari_HDD_Seoul,_December_4,_2025.png", credit: "K-POPIT 케이팝잇", license: "CC BY 4.0" },
-      { name: "카리나", id: "karina", emoji: "🤖💎🖤", shape: "sharp", bold: 82, quote: "AI 아니고 사람 맞음. 광야에서 막 로그인한 CG급 이목구비",
-        photo: "thumb/f/fb/Karina_at_Love_Your_W_event_2025.jpg/500px-Karina_at_Love_Your_W_event_2025.jpg",
-        page: "File:Karina_at_Love_Your_W_event_2025.jpg", credit: "티비텐 TV10", license: "CC BY 3.0" },
-      { name: "차은우", id: "chaeunwoo", emoji: "🧊💫🎨", shape: "oval", bold: 74, quote: "얼굴 천재 인증 완료. 카메라가 오히려 긴장하는 얼굴",
-        photo: "3/3d/240301_Cha_Eun-woo.jpg",
-        page: "File:240301_Cha_Eun-woo.jpg", credit: "K-POPIT 케이팝잇", license: "CC BY 3.0" },
-      { name: "뷔", id: "v", emoji: "🐯🎨🌌", shape: "sharp", bold: 92, quote: "조각상이 걸어 다니는 중. 미술관에서 소장 문의 올 상",
-        photo: "thumb/d/d4/BTS's_V_20251004_04.jpg/500px-BTS's_V_20251004_04.jpg",
-        page: "File:BTS%27s_V_20251004_04.jpg", credit: "티비텐", license: "CC BY 3.0" },
-    ]},
-    B: { label: "소두 + 담백·청순 분위기", grad: "linear-gradient(135deg,#9ef0c9 0%,#8fd3ff 100%)", celebs: [
-      { name: "안유진", id: "yujin", emoji: "🐶🍑🎀", shape: "round", bold: 46, quote: "작은 얼굴에 오밀조밀 다 들어있는 상견례 프리패스상",
-        photo: "thumb/6/6a/03102026_IVE_YUJIN_Airport_Departure_18.jpg/500px-03102026_IVE_YUJIN_Airport_Departure_18.jpg",
-        page: "File:03102026_IVE_YUJIN_Airport_Departure_18.jpg", credit: "K-POPIT 케이팝잇", license: "CC BY 4.0" },
-      { name: "수지", id: "suzy", emoji: "🌸☕🤍", shape: "oval", bold: 40, quote: "첫사랑 재질 원본 파일. 담백한데 자꾸 생각나는 얼굴",
-        photo: "thumb/3/33/Bae_Suzy_at_OB_Beer_Hanmac_%27As_Smooth_As_Possible%27_campaign%2C_3_April_2024_04.jpg/500px-Bae_Suzy_at_OB_Beer_Hanmac_%27As_Smooth_As_Possible%27_campaign%2C_3_April_2024_04.jpg",
-        page: "File:Bae_Suzy_at_OB_Beer_Hanmac_%27As_Smooth_As_Possible%27_campaign,_3_April_2024_04.jpg", credit: "K-POPIT 케이팝잇 (TV10)", license: "CC BY 3.0" },
-      { name: "박보검", id: "parkbogum", emoji: "🌿😊🍀", shape: "round", bold: 34, quote: "착함이 얼굴에 적혀 있음. 어르신 호감도 만렙 찍은 상",
-        photo: "thumb/e/e9/Park_Bo-gum_%EB%B0%95%EB%B3%B4%EA%B2%80_at_a_Celine_event_in_November_2024_5.png/500px-Park_Bo-gum_%EB%B0%95%EB%B3%B4%EA%B2%80_at_a_Celine_event_in_November_2024_5.png",
-        page: "File:Park_Bo-gum_%EB%B0%95%EB%B3%B4%EA%B2%80_at_a_Celine_event_in_November_2024_5.png", credit: "티비텐 TV10 (TenAsia)", license: "CC BY-SA 3.0" },
-      { name: "정해인", id: "junghaein", emoji: "☔🌙🤍", shape: "sharp", bold: 30, quote: "은은하게 스며드는 훈훈함. 비 오는 날 우산 씌워줄 것 같은 얼굴",
-        photo: "thumb/3/37/Jung_Hae-in_20260827.png/500px-Jung_Hae-in_20260827.png",
-        page: "File:Jung_Hae-in_20260827.png", credit: "K-POPIT 케이팝잇", license: "CC BY 3.0" },
-    ]},
-    C: { label: "황금 비율 + 개성·힙 분위기", grad: "linear-gradient(135deg,#ffb36b 0%,#ff6f91 100%)", celebs: [
-      { name: "제니", id: "jennie", emoji: "🐱🖤💋", shape: "sharp", bold: 80, quote: "크기보다 분위기로 압도하는 연예인 포스. 걸어오는 순간 화보",
-        photo: "thumb/7/7a/20260526_Jennie_Kim_04.jpg/500px-20260526_Jennie_Kim_04.jpg",
-        page: "File:20260526_Jennie_Kim_04.jpg", credit: "티비텐", license: "CC BY 4.0" },
-      { name: "지드래곤", id: "gdragon", emoji: "🌼🕶️🔥", shape: "oval", bold: 70, quote: "얼굴이 곧 장르. 따라 할 수는 있어도 같아질 수는 없는 힙",
-        photo: "thumb/2/21/G-Dragon_in_October_2025.jpg/500px-G-Dragon_in_October_2025.jpg",
-        page: "File:G-Dragon_in_October_2025.jpg", credit: "티비텐 TV10", license: "CC BY 4.0" },
-      { name: "김우빈", id: "kimwoobin", emoji: "🗿⚡🖤", shape: "sharp", bold: 58, quote: "선 굵은 비율이 만드는 모델 아우라. 런웨이 직행 각",
-        photo: "c/cd/Kim_Woo-bin_at_%22Uncontrollably_Fond%22_press_conference%2C_4_July_2016_02.jpg",
-        page: "File:Kim_Woo-bin_at_%22Uncontrollably_Fond%22_press_conference,_4_July_2016_02.jpg", credit: "Yoon Min-hoo", license: "CC BY 4.0" },
-      { name: "한소희", id: "hansohee", emoji: "🦋🌹🖤", shape: "oval", bold: 64, quote: "눈빛 하나로 장면을 가져가는 무드 장인. 필터가 필요 없는 얼굴",
-        photo: "thumb/9/9f/Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_%28cropped%29.jpg/500px-Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_%28cropped%29.jpg",
-        page: "File:Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_(cropped).jpg", credit: "Desmond Herzfelder", license: "CC BY 4.0" },
-    ]},
-    D: { label: "친근한 크기 + 유쾌한 분위기", grad: "linear-gradient(135deg,#ffe066 0%,#ffa95e 100%)", celebs: [
-      { name: "강호동", id: "kanghodong", emoji: "🐻🍖💪", shape: "round", bold: 76, quote: "어딜 가나 존재감 100%! 화면을 꽉 채우는 천하장사 에너지", pos: "50% 4%",
-        photo: "thumb/d/d3/%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg/500px-%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg",
-        page: "File:%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg", credit: "K-POPIT 케이팝잇", license: "CC BY 3.0" },
-      { name: "마동석", id: "madongseok", emoji: "🦍🥊🍼", shape: "round", bold: 56, quote: "겉은 상남자 속은 귀요미. 든든함이 얼굴에서부터 시작되는 마블리 재질",
-        photo: "thumb/f/f1/Don_Lee_by_Gage_Skidmore.jpg/500px-Don_Lee_by_Gage_Skidmore.jpg",
-        page: "File:Don_Lee_by_Gage_Skidmore.jpg", credit: "Gage Skidmore", license: "CC BY-SA 3.0" },
-      { name: "조세호", id: "joseho", emoji: "🎩😆🎤", shape: "oval", bold: 50, quote: "안 불러도 와주면 고마운 얼굴. 분위기 메이커 확정", pos: "45% 20%",
-        photo: "thumb/9/96/Choseho2020.png/500px-Choseho2020.png",
-        page: "File:Choseho2020.png", credit: "재뻘TV", license: "CC BY 3.0" },
-      { name: "정준하", id: "jungjunha", emoji: "🍜🤗🎶", shape: "round", bold: 40, quote: "마음씨까지 넓어 보이는 푸근한 매력. 보기만 해도 든든한 행복상", pos: "50% 30%",
-        photo: "thumb/7/71/140807_%EC%A0%95%EC%A4%80%ED%95%98.jpg/500px-140807_%EC%A0%95%EC%A4%80%ED%95%98.jpg",
-        page: "File:140807_%EC%A0%95%EC%A4%80%ED%95%98.jpg", credit: "Park Dae ung", license: "CC BY 4.0" },
-    ]},
+    A: { label: "소두 + 화려한 이목구비", grad: "linear-gradient(135deg,#ff8cc6 0%,#b69bff 100%)" },
+    B: { label: "소두 + 담백·청순 분위기", grad: "linear-gradient(135deg,#9ef0c9 0%,#8fd3ff 100%)" },
+    C: { label: "황금 비율 + 개성·힙 분위기", grad: "linear-gradient(135deg,#ffb36b 0%,#ff6f91 100%)" },
+    D: { label: "친근한 크기 + 유쾌한 분위기", grad: "linear-gradient(135deg,#ffe066 0%,#ffa95e 100%)" },
   };
+
+  // ---------- celeb DB ----------
+  // Photos: Wikimedia Commons (free licenses). vec: 128-d face descriptor quantized to int8, base64.
+  // fx/fy: face center in the photo (percent), used to frame the crop.
+  // [name, gender, emoji, line, photo, page, credit, license, vec, fx, fy]
+  // ---- CELEBS:BEGIN
+  const CELEB_ROWS = [
+    ["장원영","F","💖👑✨","원근법을 무시하는 비현실적 비율! 뒤로 가기 금지령 발동","https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Jang_Won-young_at_the_Bulgari_HDD_Seoul%2C_December_4%2C_2025.png/500px-Jang_Won-young_at_the_Bulgari_HDD_Seoul%2C_December_4%2C_2025.png","https://commons.wikimedia.org/wiki/File:Jang_Won-young_at_the_Bulgari_HDD_Seoul,_December_4,_2025.png","K-POPIT 케이팝잇","CC BY 4.0","7AcL4sr60dUxukncxO7nYbi1ABYfDAQ2w4HL6+D81RvD+hdAA85GGoQXOVU0CQjHPL4PPBEnDdgjPcX1EPgcz1Y05a41xLkhxLSJ9H89tycT4jdTGybg9nTyD1sPHSQU2xut/PIO9BrFLPzn5gnZ7SuwNS8jMjct8OCv9DfqJwg=",58,39],
+    ["카리나","F","🤖💎🖤","AI 아니고 사람 맞음. 광야에서 막 로그인한 CG급 이목구비","https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/Karina_at_Love_Your_W_event_2025.jpg/500px-Karina_at_Love_Your_W_event_2025.jpg","https://commons.wikimedia.org/wiki/File:Karina_at_Love_Your_W_event_2025.jpg","티비텐 TV10","CC BY 3.0","6xYX1tEL3OUptEi/tQHebc3L6wUeH+Yd4YXb4fDg0hXBBPwm/cM/FIEgKVwzAv3ENawCKR8j9s8lI6z+KPAEzls53qY7vNUyzrOVAX9Euhr88ENLGBHwAHfaBF0LDPkX5RvRBgf59DCvSPP0Av/rAkCvMzwhIzcu+9iB70HnGw4=",46,34],
+    ["안유진","F","🐶🍑🎀","작은 얼굴에 오밀조밀 다 들어있는 상견례 프리패스상","https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/03102026_IVE_YUJIN_Airport_Departure_18.jpg/500px-03102026_IVE_YUJIN_Airport_Departure_18.jpg","https://commons.wikimedia.org/wiki/File:03102026_IVE_YUJIN_Airport_Departure_18.jpg","K-POPIT 케이팝잇","CC BY 4.0","0hsL3rYE0tAlwFPUvPHaXL7IAAkiDvkb24HX7vXi4AHC/Qkd69gx/4wMM1U7IfywNMESNP4VBMoXP8cIHAAOy2c06qBSwsohyaiX9X8+xBAD8kNBCvng53zrAlkOCRUHzh+14/Lx+ELCPfsA9wjl6TS/UDhIMjgw+u2cAyvVHBA=",50,40],
+    ["수지","F","🌸☕🤍","첫사랑 재질 원본 파일. 담백한데 자꾸 생각나는 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/Bae_Suzy_at_OB_Beer_Hanmac_%27As_Smooth_As_Possible%27_campaign%2C_3_April_2024_04.jpg/500px-Bae_Suzy_at_OB_Beer_Hanmac_%27As_Smooth_As_Possible%27_campaign%2C_3_April_2024_04.jpg","https://commons.wikimedia.org/wiki/File:Bae_Suzy_at_OB_Beer_Hanmac_%27As_Smooth_As_Possible%27_campaign,_3_April_2024_04.jpg","K-POPIT 케이팝잇 (TV10)","CC BY 3.0","0RUUz6v14Ok6tVLmvgrbYqjP+PMYGPMSyoHZ8tPj7RHJBgUz8+clD5IlLmBHCfm/K7wFKBUQENwKMdH8GuwJxlg31a0rtbQTz7SB8X84uBMM8DRZABbf/2jj9lgIHgoJ1BHH7Pjr7THDO+//6xjr8De1PksSNTgh6gCwAxPhMhM=",49,35],
+    ["제니","F","🐱🖤💋","크기보다 분위기로 압도하는 연예인 포스. 걸어오는 순간 화보","https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/20260526_Jennie_Kim_04.jpg/500px-20260526_Jennie_Kim_04.jpg","https://commons.wikimedia.org/wiki/File:20260526_Jennie_Kim_04.jpg","티비텐","CC BY 4.0","0w4ZyNv71Mw7uz/YsOniVsS19xEoAuch34HR7+zs4RCn8wFIA9If9YYSJUk+Ef7MJMEMLzAeB64nEMb2HNwS2kMf5aQ2vOwjwLWB93hAvCf9Cig5FSXaBGDiA0z6DgII7CLQEf8C+ym9Jvz/6wXS6TmqSVQeLzUp/+al+CjsIRc=",52,30],
+    ["한소희","F","🦋🌹🖤","눈빛 하나로 장면을 가져가는 무드 장인","https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_%28cropped%29.jpg/500px-Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_%28cropped%29.jpg","https://commons.wikimedia.org/wiki/File:Han_So-Hee_at_the_2025_Toronto_International_Film_Festival_(cropped).jpg","Desmond Herzfelder","CC BY 4.0","2RcN1sj74M0wsUfQtSjqTbvE4vELGeg70o/X3Orz1/q5GQowDN47A4gVQVtCEuvOO6InNg0sDrUVKcMDLfcWzXFE2LUwn9Ecz7SRBX9lwinq6zYyDCbfC3/yF3D+/QkRxvS78+cC+ymTR/Dm3xLu+0GoQCcsQR8n7+Go7ynmMCQ=",54,35],
+    ["아이유","F","🍑🎤🌙","볼수록 정드는 얼굴. 국민 여동생에서 국민 아티스트까지","https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/IU_at_the_Est%C3%A9e_Lauder_launch_event%2C_26_February_2026_%2810%29.png/500px-IU_at_the_Est%C3%A9e_Lauder_launch_event%2C_26_February_2026_%2810%29.png","https://commons.wikimedia.org/wiki/File:IU_at_the_Est%C3%A9e_Lauder_launch_event,_26_February_2026_(10).png","티비텐","CC BY 4.0","1iUh3rL81/IyqmjLpQztZ7zD4/kjMesDwYHi/t7T7Ai/DQ9ECMsgGYEhJl0+9PLBMLECMP8XCt0KPsHlOuwJxkIr15oguc0sxbWBBn0n0xUV/ytCGxzZHX3gBmf0DAkY1gTLAf7u5irBKeb87PPn+zu2P0MoJD8N8eug+BPsGwE=",48,48],
+    ["김태리","F","🌾🔥📚","맑은데 단단한 눈빛. 한 번 보면 잊히지 않는 개성파","https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Kim_Tae-ri_PRADA_BEAUTY_Photo_call_August_2024.png/500px-Kim_Tae-ri_PRADA_BEAUTY_Photo_call_August_2024.png","https://commons.wikimedia.org/wiki/File:Kim_Tae-ri_PRADA_BEAUTY_Photo_call_August_2024.png","K-POPIT 케이팝잇","CC BY 3.0","3xgE4sXw6OFLyj/aoe/Qar68+QEjDeQLzIvR+OP45SzR6B81/ORIBowXQWU2Bv7FM7D2PCQiBdcdKrjsLtHu0Vcl0Kc0sMMP2siB8X83wTsH9yxC8yrb7mjkB0kYKxMM4vnC/wvuBijDOvsC7gvh9jWvNS4SKEwj5vaz5CXkOhM=",49,29],
+    ["박보영","F","🐿️🍓💕","웃으면 주변이 환해지는 뽀블리 그 자체","https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/20240719_Park_Bo-young_3rd_Blue_Dragon_Series_Awards.jpg/500px-20240719_Park_Bo-young_3rd_Blue_Dragon_Series_Awards.jpg","https://commons.wikimedia.org/wiki/File:20240719_Park_Bo-young_3rd_Blue_Dragon_Series_Awards.jpg","K-POPIT 케이팝잇","CC BY 3.0","7SEA47kN4e03tkLMtCPWUb+42wIVKOga1IHu5/ju4RjHDiIY9NxIE4EiLXFBG/K6NKT6RwQrDsQXG9j5H/EKvnMU2LY6vdAyzbCyAH9SxCMBBD0+AgrtBn/c/VsFDQYE2Qu68xQG/DW1Nur4Ag7u/TmnUzQzKzIQ+O2b4zXzHv0=",45,30],
+    ["김고은","F","🌙🎈😊","무쌍 매력의 정석. 웃을 때 반달 되는 눈이 킬포인트","https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/050826_Kim_Go-eun_at_the_2026_Baeksang_Arts_Awards.png/500px-050826_Kim_Go-eun_at_the_2026_Baeksang_Arts_Awards.png","https://commons.wikimedia.org/wiki/File:050826_Kim_Go-eun_at_the_2026_Baeksang_Arts_Awards.png","TV10 / Ten Asia","CC BY 4.0","1iAb2t/v2doruEzSvvH7TMm+5xwkG/AfyoHTAej+4h+07A9R+900BIEVJmVD9wfcLbgPPRwmCdQZOcjzLtYT2EEp36c8x98cvbqCDH8uwSkM/y5JGSLhEWnzBlACAyUS4g25G/3s7zbMP/cF+gXl4CzBNjMRMjY0/fyi7yn8Hgw=",56,35],
+    ["전지현","F","🌊👑✨","세월이 비켜 가는 원조 여신 비율","https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Jun_Ji-hyun.jpg/500px-Jun_Ji-hyun.jpg","https://commons.wikimedia.org/wiki/File:Jun_Ji-hyun.jpg","Republic of Korea","CC BY-SA 4.0","3CIj7ujo5NEp0WPZuAblT9bC3RgmC/oe04bn9uf17ByfAw1DAdZA74EeIFtS6ve/J6wXOwIpDM4gM8/pK+URtUUj2K0out83v7CBCX9FrCsCCTo8HiPVAnj681rx9hIY7PerA+j/4kC3LPIK/QLq7i2tSCokIS8u4/id+Cn9Kg0=",51,30],
+    ["송혜교","F","🤍🌷💎","화장 안 해도 화보 되는 맑은 이목구비","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/20230719_Song_Hye-kyo_%28%EC%86%A1%ED%98%9C%EA%B5%90%29.jpg/500px-20230719_Song_Hye-kyo_%28%EC%86%A1%ED%98%9C%EA%B5%90%29.jpg","https://commons.wikimedia.org/wiki/File:20230719_Song_Hye-kyo_(%EC%86%A1%ED%98%9C%EA%B5%90).jpg","K-POPIT 케이팝잇","CC BY 3.0","1yj62tP52dkxxj7Ktv7cXqyv7A8U/ehCz4HV4uvy0AXD+SRI8tlDC44PPHRIEgjGObcYRBgzFL4bL8PpHPMAxV873ptNsNgfzbyT8H9VwiIA7Cw9ByvfBmP1DDYH/iIIxA+q7fIJ+Ca6Pvvr2Qbh+zypPS8kMCog7eOd8CPuLwI=",59,30],
+    ["이효리","F","🌞🧘🔥","털털함과 카리스마를 동시에 가진 영원한 원조 핫걸","https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/%28Marie_Claire_Korea%29_Feel_The_Soul_-_%EC%9D%B4%ED%9A%A8%EB%A6%AC_%284%29.jpg/500px-%28Marie_Claire_Korea%29_Feel_The_Soul_-_%EC%9D%B4%ED%9A%A8%EB%A6%AC_%284%29.jpg","https://commons.wikimedia.org/wiki/File:(Marie_Claire_Korea)_Feel_The_Soul_-_%EC%9D%B4%ED%9A%A8%EB%A6%AC_(4).jpg","Marie Claire Korea","CC BY 3.0","7yIV4+L55eEwzUzirAn6SMbA2AcIH/sp2IHR6/7s8CHGERgT/M1dH43rMX9KCwLvJ5gVRhkwFbocFaf4CeH71X1C07xVuuAcvLyg9X9FuC3x4htFACLzEmrq/WEB7hgH6Pu3+gP9ADCkTxHp+wHk7TubSCgbOQov/+G14ib1GBI=",57,27],
+    ["박나래","F","🎤💃😆","에너지 200%! 어디서든 분위기 살리는 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/0/03/%28TV_TEN%29_MBC%EC%97%90%EB%B8%8C%EB%A6%AC%EC%9B%90_%EB%B9%84%EB%94%94%EC%98%A4%EC%8A%A4%ED%83%80_-_%EB%B0%95%EB%B3%B4%EA%B2%80%EC%9D%B4_%EB%B0%95%EB%82%98%EB%9E%98%EC%9D%98_%EB%AF%B8%EB%81%BC%EB%A5%BC_%EB%AC%BC%EC%97%88%EB%8B%A4_48s.jpg/500px-%28TV_TEN%29_MBC%EC%97%90%EB%B8%8C%EB%A6%AC%EC%9B%90_%EB%B9%84%EB%94%94%EC%98%A4%EC%8A%A4%ED%83%80_-_%EB%B0%95%EB%B3%B4%EA%B2%80%EC%9D%B4_%EB%B0%95%EB%82%98%EB%9E%98%EC%9D%98_%EB%AF%B8%EB%81%BC%EB%A5%BC_%EB%AC%BC%EC%97%88%EB%8B%A4_48s.jpg","https://commons.wikimedia.org/wiki/File:(TV_TEN)_MBC%EC%97%90%EB%B8%8C%EB%A6%AC%EC%9B%90_%EB%B9%84%EB%94%94%EC%98%A4%EC%8A%A4%ED%83%80_-_%EB%B0%95%EB%B3%B4%EA%B2%80%EC%9D%B4_%EB%B0%95%EB%82%98%EB%9E%98%EC%9D%98_%EB%AF%B8%EB%81%BC%EB%A5%BC_%EB%AC%BC%EC%97%88%EB%8B%A4_48s.jpg","tenasia10","CC BY 3.0","2wr98dvq4fUlyj3Pxf7iWcPN0/gbFuIc3IPb5BXq3xnT7yMXBtdOEooVGn9CDxHELsUCNyMXBNUWP7r5J+gCzF8V1KZQv98b0biP/n9OuS/z8UdQAg/29mny/DQQ9QPz0wnP8PsKCTvFSfn69gjz9S6xKTw3LTQfAfuK9TPuLQM=",44,31],
+    ["이영자","F","🍜😄💛","보기만 해도 든든하고 정겨운 국민 맛집 가이드 상","https://upload.wikimedia.org/wikipedia/commons/a/ab/191025_%EC%9D%B4%EC%98%81%EC%9E%90.jpg","https://commons.wikimedia.org/wiki/File:191025_%EC%9D%B4%EC%98%81%EC%9E%90.jpg","NewsInStar","CC BY 3.0","0QcpCsz67MQut0DRrAPrS8DD6vQd8fkJ/YHM5RT06BjK6foW+85S4qT3I0E0J//iIrT5NhcXFdIOIcYEHcv82F0z+8M/xOQG0civ+n8m0Rb970EZ9fDk8lnyAjTt/RgF4xXH8SXsBhLBEeX/F/TBAEm0Qz3yOCg38fGn4UABGf8=",49,36],
+    ["김숙","F","😎🏠👍","쿨하고 시원시원한 걸크러시 언니 상","https://upload.wikimedia.org/wikipedia/commons/2/28/Kimsook2019.png","https://commons.wikimedia.org/wiki/File:Kimsook2019.png","SBS Radio 에라오","CC BY 3.0","1wUe7+Ht6cQqykXbsNP1TdTY6fwA9BcLzYHT4Of14iLM6QtB9OxI66DxJFlKBwriKMAHJgMXDNobQOT/Kcvn71AQ0sMfyuoUubWBBH81vg/7CUg/Dw/Z/EnlA0j6GfcF5RfBATH9Cyi8K/8THOzV6T+2KVkSKEccAAWlCCr3HQE=",48,40],
+    ["장도연","F","🦒✨😏","길쭉한 비율에 위트 한 스푼, 모델 겸 개그 장인","https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/%EC%9E%A5%EB%8F%84%EC%97%B0_%28JANG_DO_YEON%29_-_GIRLS_ON_FIRE_PRESS_CONFERENCE_-_P2.png/500px-%EC%9E%A5%EB%8F%84%EC%97%B0_%28JANG_DO_YEON%29_-_GIRLS_ON_FIRE_PRESS_CONFERENCE_-_P2.png","https://commons.wikimedia.org/wiki/File:%EC%9E%A5%EB%8F%84%EC%97%B0_(JANG_DO_YEON)_-_GIRLS_ON_FIRE_PRESS_CONFERENCE_-_P2.png","티비텐 (TV10)","CC BY 3.0","4SAA1sH908YwwGzHoeLpT7zG8xosEAsZ1IHL3+vo3wC36xAfANIwA5IVI10/D/u2L734NwQNC9gZO8T2KfYCv2UX0Ksh0dcisKqH/X8yuR3uCTEuHQ7L/GjLEm3wGQ4QyRG+/gf3+i7BGvf9/+nc4zKkRT03LDsY5fih+i31FvI=",53,31],
+    ["이국주","F","🌻😂💪","웃음 버튼 장착! 같이 있으면 무조건 즐거운 상","https://upload.wikimedia.org/wikipedia/commons/9/9b/%28TV_TEN%29_KBS2_%EC%99%B8%EA%B0%9C%EC%9D%B8_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_-_%EA%B9%80%EC%A4%80%ED%98%84%26%EC%9D%B4%EA%B5%AD%EC%A3%BC_%EB%8C%80%EC%84%B8_%EA%B0%9C%EA%B7%B8%EB%A7%A8%EB%93%A4%EC%9D%98_%EB%9D%BC%EC%9D%B4%EB%B2%8C%EC%9D%80_4m30s.jpg","https://commons.wikimedia.org/wiki/File:(TV_TEN)_KBS2_%EC%99%B8%EA%B0%9C%EC%9D%B8_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_-_%EA%B9%80%EC%A4%80%ED%98%84%26%EC%9D%B4%EA%B5%AD%EC%A3%BC_%EB%8C%80%EC%84%B8_%EA%B0%9C%EA%B7%B8%EB%A7%A8%EB%93%A4%EC%9D%98_%EB%9D%BC%EC%9D%B4%EB%B2%8C%EC%9D%80_4m30s.jpg","tenasia10","CC BY 3.0","wyIo3Mfb6Ngv3jnauvjsXNrT6w8a9hAk6oHwBvzy4SOp3hM/6tJA+oHyIWQ9DA/bJqcMJiIPBsYdNcPjHtb4wHA/2sk24e0LzMiE/ng2whXuFhBN9iv7/0DYBEMO+/L41xPC8xIGHUGaI/r9FgH60AqxQkwKNCkkFwnQAEX7GA4=",51,14],
+    ["신봉선","F","🎭😁🌼","표정 부자 인정. 한 장면에 열 가지 표정 가능","https://upload.wikimedia.org/wikipedia/commons/8/81/190822_%EC%8B%A0%EB%B4%89%EC%84%A0_02.png","https://commons.wikimedia.org/wiki/File:190822_%EC%8B%A0%EB%B4%89%EC%84%A0_02.png","SBS 라디오 공식 계정 에라오입니다","CC BY 3.0","zzkc5sIH5+U00z/VmSLjYMjD6+UWGPMr2YHs+vHZ7xW6DBEV9NtOBpb8QGk3CwHZLZgJPxMtBKUKHtH/JPT4yl4q3q07yOkk0a2zC39KzCD38g8o8hzvHmbrDWQPEP8Q0xy7APn4DSaeU/z84BvdBTurRj0iOCoiFemy8jTYDBw=",31,41],
+    ["라미란","F","🎬💥😏","등장하면 장면 장악. 믿고 보는 신스틸러 상","https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Ra_Mi-ran_in_2017.jpg/500px-Ra_Mi-ran_in_2017.jpg","https://commons.wikimedia.org/wiki/File:Ra_Mi-ran_in_2017.jpg","tenasia10","CC BY 3.0","5h8a+NP14+g520Dow/XpXL3EzxAeDPP+5JHh9Q305CfD3R4a8t1P7oEKMVVF/gnCNbj0Uh8xCNwZM+HzR+X/wE8W25c539EqxsaU8X8mxSPi9R43+Bzs+W7mEjcRCQAK6Bi4/wz3EDnZPv0nDw7n7jLKQCQZCUNH6QCd8zL1GAk=",41,39],
+    ["김신영","F","🎙️😆🍀","동네 친구 같은데 알고 보면 천재. 친근함 만렙","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/%EC%A3%BC%EC%98%81%ED%9B%88%2C_%EC%B2%9C%EC%9D%B4%EC%8A%AC_%EC%B6%9C%EC%97%B0_%ED%93%A8%EC%A0%84_%ED%96%84%EB%B2%84%EA%B7%B8_%EC%8A%A4%ED%85%8C%EC%9D%B4%ED%81%AC_%EA%B0%95%EB%82%A8%EA%B5%AC_%EC%97%AD%EC%82%BC%EB%8F%99_%EB%AF%BC%EB%B0%95_%28%EC%8B%9D%EC%8B%A0%EB%A1%9C%EB%93%9C_Gourmet_Road%29_eps_176-1_%28%EA%B9%80%EC%8B%A0%EC%98%81%29.jpg/500px-%EC%A3%BC%EC%98%81%ED%9B%88%2C_%EC%B2%9C%EC%9D%B4%EC%8A%AC_%EC%B6%9C%EC%97%B0_%ED%93%A8%EC%A0%84_%ED%96%84%EB%B2%84%EA%B7%B8_%EC%8A%A4%ED%85%8C%EC%9D%B4%ED%81%AC_%EA%B0%95%EB%82%A8%EA%B5%AC_%EC%97%AD%EC%82%BC%EB%8F%99_%EB%AF%BC%EB%B0%95_%28%EC%8B%9D%EC%8B%A0%EB%A1%9C%EB%93%9C_Gourmet_Road%29_eps_176-1_%28%EA%B9%80%EC%8B%A0%EC%98%81%29.jpg","https://commons.wikimedia.org/wiki/File:%EC%A3%BC%EC%98%81%ED%9B%88,_%EC%B2%9C%EC%9D%B4%EC%8A%AC_%EC%B6%9C%EC%97%B0_%ED%93%A8%EC%A0%84_%ED%96%84%EB%B2%84%EA%B7%B8_%EC%8A%A4%ED%85%8C%EC%9D%B4%ED%81%AC_%EA%B0%95%EB%82%A8%EA%B5%AC_%EC%97%AD%EC%82%BC%EB%8F%99_%EB%AF%BC%EB%B0%95_(%EC%8B%9D%EC%8B%A0%EB%A1%9C%EB%93%9C_Gourmet_Road)_eps_176-1_(%EA%B9%80%EC%8B%A0%EC%98%81).jpg","Official Youtube account of 식신로드 (Gourmet Road), its twitter","CC BY 3.0","1iEA4dnj/9RA3DzgveXoVbvN2QEqDwcf2YHb1/vw3B/CyBor8OFGDIEDPWZDHA+/MrcOKAolB9QcK7zzOOjo6Wg73bg/wMsb1MqZ738hyA/dAE47+R/t927x+koUEhoR3Bau7CX+/C6zNggGEe3h8DDBSzwTIjsWAOWU/07xKPU=",55,38],
+    ["윤여정","F","🎬🏆🍷","시크하고 우아한 내공. 말 한마디에 품격이 있는 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Youn_Yuh-jung_in_February_2026.png/500px-Youn_Yuh-jung_in_February_2026.png","https://commons.wikimedia.org/wiki/File:Youn_Yuh-jung_in_February_2026.png","TV10","CC BY 4.0","6hAW9fbc0a8r1VLrtezyYKbP2AEG9xH9+oHL5BMI2xTI+SsgBdhK7p4WGTZYARC2OcLwPRAuAtoPO9DvHdP2400lzq0p1eoMvr2g838ZuCnX5yUvCQXo7mzSGUzjKfsT5QnO3AL7DRfDJwIYIgIA3TKuW1AUKBoy7Pq6+iEbAvY=",49,41],
+    ["전도연","F","🎞️🌹💫","평범한 듯 깊은 눈빛, 칸이 알아본 연기 천재 상","https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Jeon_Do-yeon_in_2026.jpg/500px-Jeon_Do-yeon_in_2026.jpg","https://commons.wikimedia.org/wiki/File:Jeon_Do-yeon_in_2026.jpg","Republic of Korea","CC BY-SA 4.0","1DEU4dsI6tY+1VzwoA3YV7jC4QMIMeIQ9Yvs4Qr60wC7/R4b9tNO+4z/KGhK/fDHL6XvRCIo8qIIHcXjFOn3zHIfwKs2yeQhu7WaC38vwC/l/SAx8iDnAGjf/ULqFQcg6wzH/xPwEEavNgILEQHx9UWoYzAQNy4h6vyZ4zHwLwU=",43,36],
+    ["김혜수","F","👑🔥💃","등장만으로 압도하는 카리스마 여왕 상","https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/250313_Kim_Hye_Soo_%28%EA%B9%80%ED%98%9C%EC%88%98%29.png/500px-250313_Kim_Hye_Soo_%28%EA%B9%80%ED%98%9C%EC%88%98%29.png","https://commons.wikimedia.org/wiki/File:250313_Kim_Hye_Soo_(%EA%B9%80%ED%98%9C%EC%88%98).png","K-POPIT 케이팝잇","CC BY 3.0","2BQ02tDazMkrxk7qtf34YqzH8fAE+Qsh24vR+PYL5Bi/+x4xCtE78ZwYO05W/AzRLb8XLysQKLQXQdP8FPgJ1lxE3p9Cy9UXrcOC8XQ7mSAU/CpVAhXj8FXy+10RAA3v3P2Y3u4Z9Du+F/T33hTz4Si5NkoaIiMhDwbNBh3aHBY=",50,32],
+    ["엄정화","F","💃🎤✨","시간이 멈춘 듯한 원조 디바의 에너지","https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/Uhm_Junghwa_Kolon_Sports_50th_Anniversary_Event_1.jpg/500px-Uhm_Junghwa_Kolon_Sports_50th_Anniversary_Event_1.jpg","https://commons.wikimedia.org/wiki/File:Uhm_Junghwa_Kolon_Sports_50th_Anniversary_Event_1.jpg","티비텐","CC BY 3.0","6yA02e7v2LEj3VfcnwbtQM/M2AQPBQEJ3IfDCO/19/qtAwYm8awiAYsUJmBH6f3KJawBN/QeC9oVT8kHKNfvtT4/xKARxt8VvqyBFH8stzD2DChRHDTf/2fZDX/fAAQZ0wq39hL7Aia/LxAQKeDx0jmZOEcxHTkkBAm7DRYA8v8=",50,30],
+    ["정은지","F","🍑🎤😊","사투리 한마디에 무장해제되는 친근한 매력","https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/%EC%A0%95%EC%9D%80%EC%A7%80_%28JUNG_EUN_JI%29_-_GIRLS_ON_FIRE_PHOTOSHOOT_-_P4.jpg/500px-%EC%A0%95%EC%9D%80%EC%A7%80_%28JUNG_EUN_JI%29_-_GIRLS_ON_FIRE_PHOTOSHOOT_-_P4.jpg","https://commons.wikimedia.org/wiki/File:%EC%A0%95%EC%9D%80%EC%A7%80_(JUNG_EUN_JI)_-_GIRLS_ON_FIRE_PHOTOSHOOT_-_P4.jpg","티비텐 (TV10)","CC BY 3.0","6wwC47f43vQyyVjMo/3iY7e29B8ZC/QozIHa5dXn9we//hcv9sQ/EoESK2grEA2/Oqn7P/wQANYURcP2IQ4Pwmsex7k7xNEgvp2I/n8uyxj0CyxFHBfJAn/bD1oDFAsW0hSzAgUL+inOHQH2+xHS2TGxQTIzKEEd6t+c+iICHPo=",48,32],
+    ["혜리","F","🐹💕✨","애교와 털털함 반반! 볼수록 귀여운 상","https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Hyeri_in_October_2024.png/500px-Hyeri_in_October_2024.png","https://commons.wikimedia.org/wiki/File:Hyeri_in_October_2024.png","K-POPIT 케이팝잇","CC BY 3.0","7AsT49bm5MwxwFLQr/TxXcO97/UYAwkpzoTPAtPv8Sy2/hMsBdhD/oERMGk8AuraKsUXSv8O/eAdN8zpN9wDvkQp0Z8Vuc8bqa+B/n8txikaADxYFibhCFvw6GTwBgoR7hW0FPwF7S3CLfgR8wfM3CmrMEAtHDYn+/yhAzLsLAw=",52,28],
+    ["태연","F","🎤🦋💙","작은 체구에 큰 존재감, 목소리처럼 맑은 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/230609_Kim_Tae_Yeon_%28%EA%B9%80%ED%83%9C%EC%97%B0%29.png/500px-230609_Kim_Tae_Yeon_%28%EA%B9%80%ED%83%9C%EC%97%B0%29.png","https://commons.wikimedia.org/wiki/File:230609_Kim_Tae_Yeon_(%EA%B9%80%ED%83%9C%EC%97%B0).png","K-POPIT 케이팝잇","CC BY 3.0","6BMH7MEB4+A1wFXjvu3tYaHD9wYrHPImzoHe6eHc6xPR/hMsANA7A4EZKVQ4Cu3FMssBPBYY+9cNK8zZG9seyj8f6Z0ptq4oza6M7H89shQM8j5YIB3W8Wrm/FoNFRoB6CnD8/0O+CzKPPn+9gnk6zm0NzwiNDEy4t+S/TPpMAA=",51,31],
+    ["아이린","F","🌹❄️💎","인형 같은 비주얼 센터의 정석","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/240511_Red_Velvet_Irene.jpg/500px-240511_Red_Velvet_Irene.jpg","https://commons.wikimedia.org/wiki/File:240511_Red_Velvet_Irene.jpg","K-POPIT 케이팝잇","CC BY 3.0","5yUS2Nf75Ns4skXInf3sU8i67hotEeke3IHY/ebd8Q+4+/0sAMQ3+4EeHmY4AfbNLbEDMRoSCccbFr/wJeMe0kcc5as1tespxrSM+384vhwBBztAHg7RD3rc8VkF/gsJ3hfCFAj97D/DMPv7/g3S5DK1PzkbIScj/Ouc7S38JQM=",51,33],
+    ["정호연","F","🦌🖤✨","흉내 낼 수 없는 독보적인 모델 무드","https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/HoYeon_Jung.jpg/500px-HoYeon_Jung.jpg","https://commons.wikimedia.org/wiki/File:HoYeon_Jung.jpg","Republic of Korea","CC BY-SA 4.0","0CIJ1cf1zMkwy1TRt+jTWKnJ+xAu/PkZz4HO7Obm5x+88vo2AtYk84cNI11JFAHIGb4JOwwV+s0VMcvwL+MLwF4+1L1Bz9gQu6aD9n9CwxP1CztHDhPfClzl+1f7DQUR6yfJEQr5/DjdJQYV//vo5juyRkMeNjs6996YCS3sJxM=",46,29],
+    ["김다미","F","🐱🌙🖤","몽환적인 고양이 눈매, 볼수록 빠져드는 상","https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Kim_Da-mi_in_May_2026.png/500px-Kim_Da-mi_in_May_2026.png","https://commons.wikimedia.org/wiki/File:Kim_Da-mi_in_May_2026.png","K-POPit 티비텐","CC BY 4.0","6RYW4tMD4+Eu0DnQovX0T8Wx+A8WBPof1oHQ8Pjw6SKp7hQ+9tA+BIEUI2M5CgrcJckWUiEbBNYcLtH/N+wUy08V3Z4xxdkfsb+MEX8tzTIK/SJWCiTrCmXv/EbvCQ8B5hnFCQn49zfJJewJAArO5DWpSTsXDkIwCfyc8TnwHwI=",52,31],
+    ["박은빈","F","🐳📚💛","똑 부러지는 눈빛에 따뜻함 한 스푼","https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Park_Eun-bin_in_July_2025.png/500px-Park_Eun-bin_in_July_2025.png","https://commons.wikimedia.org/wiki/File:Park_Eun-bin_in_July_2025.png","티비텐","CC BY 3.0","7Rsg28MS4OE2wVbfn/rnTMXN7hMSHfwB0IHZ99vg1gzF/go45NgiE4QSEGZQBPrXMLD/Nw8e+twERt7oMd8E0U8q0aQrxc4TtbWcBX43wP70HS8+HB3S/GrXAVv7IwkA3B+z/f4B+z7LTvgWEe3x7Dm1OUUxJDkR9PaI/h7vD/g=",51,30],
+    ["공효진","F","🌼🧢💛","편안한데 스타일리시한 공블리 감성","https://upload.wikimedia.org/wikipedia/commons/1/1a/Gong_Hyo_Jin_%28Sep_2016%29.png","https://commons.wikimedia.org/wiki/File:Gong_Hyo_Jin_(Sep_2016).png","SSG BLOG (Shinsegye official)","CC BY 4.0","AA8w3N3+9MknwVHEneoETMjD3Aj+Ev8F2IHh+fTq4S626xMpBcsw9ocTKVg7+/TWNq77JRsHDM8ZIsj7Od4L0EkQ3q4cyeMbvcuB/Xsmsxf/FDg4CRvZ+2zg9lfzCQz24AmuDgj3+kS7KfIAGP3b3jKoJUIkEjEb+BKr7TnuGf0=",47,24],
+    ["한가인","F","🌸👑🤍","교과서에 실릴 법한 단아한 미인 상","https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Han_Ga-in_%ED%95%9C%EA%B0%80%EC%9D%B8_2024_02.jpg/500px-Han_Ga-in_%ED%95%9C%EA%B0%80%EC%9D%B8_2024_02.jpg","https://commons.wikimedia.org/wiki/File:Han_Ga-in_%ED%95%9C%EA%B0%80%EC%9D%B8_2024_02.jpg","BH Entertainment","CC BY 3.0","4SQQ18EL0PEVxTvbtAfqTrzH6AMVLvAk0IHs8dH98wq7HRQi9cdIFokmH25MBvjbQ5sRU/gMCNslL73aCOcIzV8x3bM/wdkgvrOZE39MtSn7AT5OEP7hC3Ht820d7h8C3/rE+hMF7EilQOvrBfL37CeuLiMcQCMf7+ib4DMHIQY=",39,38],
+    ["이성경","F","🦢💖😄","모델 비율에 장난기 가득한 웃음","https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Lee_Sung-kyung_in_March_2025.png/500px-Lee_Sung-kyung_in_March_2025.png","https://commons.wikimedia.org/wiki/File:Lee_Sung-kyung_in_March_2025.png","K-POPIT 케이팝잇 TV10","CC BY 3.0","4jYnz9AAzN8pyWTFrunycMG27AsjDvckuoHhCvnL5gukAg9QBbMuBYEUOWpV3AvVJbAEMCAh+dwUM7/cPuYGyEYu0pIdwuElycCB/H85tDMCAxdLHkDZLXDdE1oAAwwb0BnFBvgOBy26UQMB/QDv6y2qLTskIUkqBfG3/xXgMQg=",51,29],
+    ["김연아","F","⛸️👑❄️","단아한 기품과 승부사의 눈빛을 동시에","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/YuNaKimInVancouver.jpg/500px-YuNaKimInVancouver.jpg","https://commons.wikimedia.org/wiki/File:YuNaKimInVancouver.jpg","Sfcphoto.KeunHwa","CC BY 3.0","5hTy488A589A5GDlq9LdVKzFCRAoBvUb3YHb7Qje7je06BxJ/+IsC58GKF82BAm9Fsn8Ph4W+c4DMtUDMeT/wEQO2bEwxbsc0rSJ9H85vyYA7ytDEijY+2jxE1DzJgn/9Bu86OzrAiXRJQ0JAfzj80CsTUI0JkMy9teq/hrjHfo=",51,25],
+    ["손예진","F","🌷☔💕","멜로 장인 눈빛, 청순함의 대명사","https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Son_Ye-jin_in_May_2026.png/500px-Son_Ye-jin_in_May_2026.png","https://commons.wikimedia.org/wiki/File:Son_Ye-jin_in_May_2026.png","TV10","CC BY 4.0","zyMS3s0B17ohymvPsufsSrDB8hgeCPwZ0YHI7/Xn0wmn5wUx89gnBZIhK1JDGQLEJ7gPNBYd+8QJM8/+JeUW0koz9JkyyNQ0wq6K/X81xAvx+DIuIw/G/H3kBV8BFhUL1RW78ecS7DHNM/b95+H18i+rP0MuLSsT7uuW/S7oGgA=",55,30],
+    ["김희애","F","💎🍷🌹","나이를 잊은 우아함, 세련됨 그 자체","https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/Kim_Hee-ae_in_August_2026.png/500px-Kim_Hee-ae_in_August_2026.png","https://commons.wikimedia.org/wiki/File:Kim_Hee-ae_in_August_2026.png","K-POPIT 케이팝잇","CC BY 4.0","6Q4B4eoD+sw2wUXg1O3wSrTP3fkTFuET3JPY6xT68QvB7BIf7NE1CqUcIVxeFvO/ULHvLA4s9NYXPLP0Eu8M6lQs3KY9qt4V0sGdA38t0BHyBUk1Bebz2njxAlf9+goH0R7S6wMBFEm7UuoXIe7v6zi9OzgWKCwt7guVAyjsD/A=",51,31],
+    ["나문희","F","🌼🍵💛","보고만 있어도 마음이 따뜻해지는 국민 어머니 상","https://upload.wikimedia.org/wikipedia/commons/a/af/190713_%EB%82%98%EB%AC%B8%ED%9D%AC.jpg","https://commons.wikimedia.org/wiki/File:190713_%EB%82%98%EB%AC%B8%ED%9D%AC.jpg","뉴스인스타","CC BY 3.0","5RMp8NMX+asoylHknAL4SsDL3e/jIff/x4Hk4AIQ5CG3CCQ75+hIB6YGJUVUBA3EOKLsMAMRDrjvG8DuDd3u7FYWyNRBvf4W17yNBn8OuQrs7zQjA/rh/3HdGkvtDhQ0v/C75wj3DDOvQ/XfENTn9E+fMTXfQyIT3f+w1RzxDek=",50,32],
+    ["오나라","F","🌞😆💃","밝은 에너지 무한 충전! 웃음이 예쁜 상","https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Oh_Na-ra_in_April_2024.png/500px-Oh_Na-ra_in_April_2024.png","https://commons.wikimedia.org/wiki/File:Oh_Na-ra_in_April_2024.png","K-POPIT 케이팝잇","CC BY 3.0","9hkO1c8F6No7yUjOoxLzV7jD1fwWKO4c0pHt7AHj8wu47BMj+bQr/IH5J1U77/O4KbP1Mvwu+MwhSMr4MOggz04P46QkysoiybON+H8uviP5AkFGHRLmAnvWCF/x9RQczyfE9Rv/C0DFNQIGJADwz0nCQT8nJy839/6gBzH8EAA=",49,32],
+    ["염혜란","F","🎭🌷👍","한 장면으로 울리고 웃기는 연기 장인 상","https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Yeom_Hye-ran_%EC%97%BC%ED%98%9C%EB%9E%80_2019.png/500px-Yeom_Hye-ran_%EC%97%BC%ED%98%9C%EB%9E%80_2019.png","https://commons.wikimedia.org/wiki/File:Yeom_Hye-ran_%EC%97%BC%ED%98%9C%EB%9E%80_2019.png","Korean Newspaper Newspaper \"NewsInstar\"","CC BY 3.0","5hga9uj03Msl02LSl+TpXbTS9xQa9gUW6IHK/OzV1PjC+hER+stNApgKKVdRF/TJPsILMywV+8b5RtnsGuUQ2lUg0rQ8ze4Pxa2Z/X8eqQfv/zRAFgTU2W7aDVT+DhD03hi9+9f3+SrAIxUBBALezyWYOj0nLx5A/fy2ASv+F/c=",50,25],
+    ["천우희","F","🍂🎬🖤","깊고 진한 눈빛, 캐릭터 소화력 최강","https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Chun_Woo-hee_in_July_2024_02.jpg/500px-Chun_Woo-hee_in_July_2024_02.jpg","https://commons.wikimedia.org/wiki/File:Chun_Woo-hee_in_July_2024_02.jpg","티비텐","CC BY 3.0","2wn/3L7d4+Ao3FbRsNfkWLSm+QEdFvIkz4TR6PXr8A696D03Ecc794EMPV8zEfi+PMkLSvwb+NAXTbvxKOQEv0sY0Iw3sMYwxbuM+H8yxyoECSxEGinN7nntBln5HR4V4w/F/Qn//ynXIfcO4Pb06i6pXDU4LTkb8NCu8R7rMwA=",53,33],
+    ["박소담","F","🐰🎬✨","작은 얼굴에 담긴 단단한 존재감","https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Parksodam_panthom2023.jpg/500px-Parksodam_panthom2023.jpg","https://commons.wikimedia.org/wiki/File:Parksodam_panthom2023.jpg","Lolo","CC BY-SA 4.0","3yYf4cH52+Mpyj3co+rtZ7vC6voIJwcJz4Hq8tr32CPFAhw68t4+BpQRI2BK+A3GNMcGQB0SC9oIP9/oJ+L4vV8dzq0sycMJwMuB93QmqR4KAy5a+B/n+GXbAUwKFw7w5grIBQHj9DLFLvMPAgHl4DW1ODsJLTw57Qys9TnyKA8=",44,32],
+    ["이정은","F","🌾🎭💛","어디선가 본 듯 친근한데 알고 보면 연기 고수","https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Lee_Jung-eun.2019.jpg/500px-Lee_Jung-eun.2019.jpg","https://commons.wikimedia.org/wiki/File:Lee_Jung-eun.2019.jpg","PARKJAEHWAN kinocine.com","CC BY-SA 4.0","7wkK4NPnBsgt3U/Fp/f+UMPb1vkcAQYe6IHf5P7f2B2w1AoR68ZCDJ0FEUMzEgm+K6/9L/oQ8eASKbcBNN7l0F844sAuzNYLzL+eAH8XtQTZBUs5DA3q/1/aAGP7GRMP2w7R8y78AjnDLO0EKOPu0Cm6NUMGGBco+f+TCUkHA+w=",48,33],
+    ["홍진경","F","🦒💎😂","모델 포스와 예능감을 동시에 가진 반전 매력","https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Hong_Jin-kyung_at_the_2016_KBS_Entertainment_Awards.jpg/500px-Hong_Jin-kyung_at_the_2016_KBS_Entertainment_Awards.jpg","https://commons.wikimedia.org/wiki/File:Hong_Jin-kyung_at_the_2016_KBS_Entertainment_Awards.jpg","Like a Fool","CC BY 4.0","2iEN8Onp7MkcyEnXqwfURrLP2OojAukN4JHq9g4F6fazAxMX9t1E86H/MFFDFAO0M7oTLSgt/KkKJdX5I+Dr12Ymw7lGv+8R6cGVCn8uuBTyBUtE6hbs/1zm7Tz+DBEUzQ/NARP3ASnSOv4FCfbn6yWnTiwZRDYtCv6l8ivyLP4=",73,21],
+    ["차은우","M","🧊💫🎨","얼굴 천재 인증 완료. 카메라가 오히려 긴장하는 얼굴","https://upload.wikimedia.org/wikipedia/commons/3/3d/240301_Cha_Eun-woo.jpg","https://commons.wikimedia.org/wiki/File:240301_Cha_Eun-woo.jpg","K-POPIT 케이팝잇","CC BY 3.0","2Qz98MoA4NY2yjvwsuTVP7y8CfszDu8O35ja6ADf6P246RgfBew79aATH2ZNGOO1PdIZPhkZ980SLc4JLeUJ3D743JYruNEny7WN/X88vh/3/UMwDg7V+Gnz507/ERQZ4xy36Qn3BDbHO/sW7evGBjyuWzRHKz4P+eGh9SLwQgs=",49,31],
+    ["뷔","M","🐯🎨🌌","조각상이 걸어 다니는 중. 미술관에서 소장 문의 올 상","https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/BTS%27s_V_20251004_04.jpg/500px-BTS%27s_V_20251004_04.jpg","https://commons.wikimedia.org/wiki/File:BTS%27s_V_20251004_04.jpg","티비텐","CC BY 3.0","2RcG5M3o29Ysw1zKuf7gRbm0+v8gHescu4HN7AHq7BbD+S44E9Y4748PPmdKCfKmLMkdPQwzENQZLszmKQIf0VUG0q47sMws0LaBBH9IwTgF8jg3AhjcD372/lT+DSsr2AW6+BEJ+EjBOPr48QHu8TKgQCEwNzMa8tuv8yH0Mw4=",53,28],
+    ["박보검","M","🌿😊🍀","착함이 얼굴에 적혀 있음. 어르신 호감도 만렙","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Park_Bo-gum_%EB%B0%95%EB%B3%B4%EA%B2%80_at_a_Celine_event_in_November_2024_5.png/500px-Park_Bo-gum_%EB%B0%95%EB%B3%B4%EA%B2%80_at_a_Celine_event_in_November_2024_5.png","https://commons.wikimedia.org/wiki/File:Park_Bo-gum_%EB%B0%95%EB%B3%B4%EA%B2%80_at_a_Celine_event_in_November_2024_5.png","티비텐 TV10 (TenAsia)","CC BY-SA 3.0","1R4R/80K6eUmtlfloOfnRd7R8RlQEv0Tz4TO6ffm0++87wMe/ecuCooNCGU/FQK9LrMnLygbENcSRccQHOgR2kYa4qc+vN03xamNCn9MtA/wA0k/IgjSAm3T+mcMAhQJ3g/P7vzs9CrCMfEE/ebR9iytRDUjKy4oBN2f9jjuIPU=",49,48],
+    ["정해인","M","☔🌙🤍","은은하게 스며드는 훈훈함. 비 오는 날 우산 씌워줄 것 같은 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Jung_Hae-in_20260827.png/500px-Jung_Hae-in_20260827.png","https://commons.wikimedia.org/wiki/File:Jung_Hae-in_20260827.png","K-POPIT 케이팝잇","CC BY 3.0","5wsJ6L/73ugmw2H0quXpT7m57QwcFvoEwoHh+fDX2xGzAiY39No3CowmFV1O/f22PbcgRh0b/dkBON3qJ/oAvj8Kw6cnxMwkt6mGEX85ux4FBB9HDCPkFnDh8lYAJBQG9wPBAfn48DjbN/UO+/nb5h+iVD08ITwT+/Wm9ir2Kvk=",49,34],
+    ["지드래곤","M","🌼🕶️🔥","얼굴이 곧 장르. 따라 할 수는 있어도 같아질 수는 없는 힙","https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/G-Dragon_in_October_2025.jpg/500px-G-Dragon_in_October_2025.jpg","https://commons.wikimedia.org/wiki/File:G-Dragon_in_October_2025.jpg","티비텐 TV10","CC BY 4.0","3ygl2tnu794k3le/s+/rVsvL7AMfAfcc1IHS1hHf4BnE8g4H9t5VD6ESHmk4ExzJK7YNOSQbDckaLpcrHvXx6FUt2bZg0+oezK2jA39Bohnn5DEw7grjAlrmCmERCgMK0Q/A5gfs/jaxSgfy3w/o+TWxOkckITIUGuCt7zDvFBM=",39,39],
+    ["김우빈","M","🗿⚡🖤","선 굵은 비율이 만드는 모델 아우라. 런웨이 직행 각","https://upload.wikimedia.org/wikipedia/commons/c/cd/Kim_Woo-bin_at_%22Uncontrollably_Fond%22_press_conference%2C_4_July_2016_02.jpg","https://commons.wikimedia.org/wiki/File:Kim_Woo-bin_at_%22Uncontrollably_Fond%22_press_conference,_4_July_2016_02.jpg","Yoon Min-hoo","CC BY 4.0","w0ERDsnm/d1Bz03esfD3KbPS9fZIA/4buKTe+gXd5BGi1/ky+PEy36wTJF05Ge/LLsEOSywfCsIRJ9cPKuAU4ksU6LQmtNNE3rSBAn8tvxD09DY+7Q+6EHD26FInBxMA4ADNAgTYzzDIKAAB2fTH/yaVRTEINh8v/fvK5CvhNgM=",47,38],
+    ["강호동","M","🐻🍖💪","어딜 가나 존재감 100%! 화면을 꽉 채우는 천하장사 에너지","https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg/500px-%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg","https://commons.wikimedia.org/wiki/File:%27%ED%95%9C%EB%81%BC%EC%A4%8D%EC%87%BC%27_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C_%ED%98%84%EC%9E%A5_14s.jpg","K-POPIT 케이팝잇","CC BY 3.0","4AYh69359cod0UjhpcnhQdLA4ekfFAfx6oHm8Q/r8h+37fsr/+M+/7bvDVxCGxPNDrwINDENCtwCKucBHOX60GoB1ttI2MIB09qIAH8eqwvhD0It8gbg9Vrf7zUHFAX9AijYCCLwDTXUJgMHIvLa4zOnO1UCMDU9A/io6TH+FBY=",46,21],
+    ["마동석","M","🦍🥊🍼","겉은 상남자 속은 귀요미. 든든함이 느껴지는 마블리 재질","https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Don_Lee_by_Gage_Skidmore.jpg/500px-Don_Lee_by_Gage_Skidmore.jpg","https://commons.wikimedia.org/wiki/File:Don_Lee_by_Gage_Skidmore.jpg","Gage Skidmore","CC BY-SA 3.0","5ygNGfLh58gg6Tzftt7sSMvQ6P4kGQAK0Ybf7hf11QvA3h0gA+FBLrARCn9EGhu7MboBPx0kAtwRJL8IMwX90lcN1c0ov8f92MOBA39DsRvr/Tw97Snt9mD1/kwJEwwE1AbV4BH0JUCyTwEJGw3h7iazM0ccHysv6Re65B39HQM=",55,30],
+    ["조세호","M","🎩😆🎤","안 불러도 와주면 고마운 얼굴. 분위기 메이커 확정","https://upload.wikimedia.org/wikipedia/commons/9/96/Choseho2020.png","https://commons.wikimedia.org/wiki/File:Choseho2020.png","재뻘TV","CC BY 3.0","xwwW+db0A8AxyW3hrcT/Pc205P4i/AUGy4Xq9wLw7DiryRE/9/FV/6ISCnI4Awu7OcgZTkAa/NEgHMv6MuYD1TIC7qck2sUisriBA38Zohf68y9ABhrZ91fn6FEc+yoO7x++9hPq/SKwT/Aa/9bb8imqOUobMjoj+xqz6CwCHBA=",51,34],
+    ["정준하","M","🍜🤗🎶","마음씨까지 넓어 보이는 푸근한 매력. 보기만 해도 든든한 행복상","https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/140807_%EC%A0%95%EC%A4%80%ED%95%98.jpg/500px-140807_%EC%A0%95%EC%A4%80%ED%95%98.jpg","https://commons.wikimedia.org/wiki/File:140807_%EC%A0%95%EC%A4%80%ED%95%98.jpg","Park Dae ung","CC BY 4.0","4ygCIuLu6sMf30Tcq9D+MtS5z/EYC+767YHs7xrw3BCmyCcq8PhA+a4AGGZDHPnfI8n/Uzgq/ccCMc4GK9Pr5GQT3Lc0y9oPzciTA38bsxHwADcr+RPs+1z85irwExfw+PvK5wTiCSzaMAwnC/7g9S+jajgRJiUgBQaq1B3+Kfs=",59,42],
+    ["유재석","M","🦗🎤😄","국민 MC의 선한 기운. 보기만 해도 믿음직한 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Yoo_Jae_Suk_going_to_work_at_Happy_Together_on_August_19%2C_2017_%281%29.jpg/500px-Yoo_Jae_Suk_going_to_work_at_Happy_Together_on_August_19%2C_2017_%281%29.jpg","https://commons.wikimedia.org/wiki/File:Yoo_Jae_Suk_going_to_work_at_Happy_Together_on_August_19,_2017_(1).jpg","F28STAR","CC BY 4.0","3ioXBtny6sot61T7oufiPMrLzQb98xQM+InT0SDm7Q/b6RUU9u5h8Z/vFmVjHBPYJroTSCwiBrMMNuoHI9P39mwY0b1GyeYdr9Wf+38owQzG+A8s2fDS41jr/zD4EQf24wTU2QjhEC25LgYiHwrn61a8WkIjHjs+9QW69xnwIQY=",41,33],
+    ["이광수","M","🦒😂🏃","기린 비율에 예능감 폭발, 아시아 프린스 상","https://upload.wikimedia.org/wikipedia/commons/f/f6/Lee_Kwang-su_1942.jpg","https://commons.wikimedia.org/wiki/File:Lee_Kwang-su_1942.jpg","Unknown authorUnknown author","Public domain","BioVDeIA884RA0b3wO4EMsL3yOYZIivww5fo4h7pBQqrABQi89Za/rExMERZ8gjbF8MbMiMm++MNP70TLNPv/DEv28cQvNgY0taB/38crvz38SU85u/tKV/19l0IBvUT7e7r8g7SCkKgPgD0MP3/AUKyUUr4GRo89Auv8Pz3IRA=",52,52],
+    ["하하","M","🎤😆🔥","작은 고추가 맵다! 에너지 넘치는 분위기 메이커","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/180802_%EB%B6%80%EC%82%B0%EB%B0%94%EB%8B%A4%EC%B6%95%EC%A0%9C_%ED%95%98%ED%95%98_1.jpg/500px-180802_%EB%B6%80%EC%82%B0%EB%B0%94%EB%8B%A4%EC%B6%95%EC%A0%9C_%ED%95%98%ED%95%98_1.jpg","https://commons.wikimedia.org/wiki/File:180802_%EB%B6%80%EC%82%B0%EB%B0%94%EB%8B%A4%EC%B6%95%EC%A0%9C_%ED%95%98%ED%95%98_1.jpg","Explicit","CC BY-SA 4.0","4yEjCev1+N441DnnkfrrOcjR0s0ICAIazLLv2RzT4g29+wYi/OEk9MXvBWFDGvfjHaUMPhguGa0MMNknG9r83lYPxNJGuege5cahAn9WuA3TAA8x8AXa+UP9/FD39fP6x/zi4gPY+SXCSgYKBRXfBUOLUlEqMhI0CfTFzQbZDBY=",49,40],
+    ["김종국","M","💪🏋️🎤","자기관리의 끝판왕, 단단함이 느껴지는 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/e/ed/Kim_Jong-kook_in_July_2023.jpg/500px-Kim_Jong-kook_in_July_2023.jpg","https://commons.wikimedia.org/wiki/File:Kim_Jong-kook_in_July_2023.jpg","SBS Radio","CC BY 3.0","1TwM5bb77Nk12UbxuM7tP8HE4/chGg0H3YH36Bz26xCp4wMu9tw8+J8WFFJQ+yDCTNn9Ox0b/dMSM9fsJO3zzlsI6KU5ycwew+SOC38qvQ/oCSA57Q3V+23x80gfKQ740RXQ/Q3n+TTERvIfA/Lz+CrHWzcuNT0e7wWs6i/hJgo=",52,32],
+    ["박명수","M","😤🎤😂","버럭 속에 숨은 귀여움, 볼수록 정감 가는 상","https://upload.wikimedia.org/wikipedia/commons/1/14/Park_Myeong-su_from_Acrofan.jpg","https://commons.wikimedia.org/wiki/File:Park_Myeong-su_from_Acrofan.jpg","acrofan.com","CC BY-SA 3.0","3g4q9un24cUszlftvuDiVqvW6fMmCwn64IHc5SkB2gu/7gg/AudI/6oWCU5fFhjCPbgHMiYl7tYQINULRckC7UEAz7Ylwd8Ox9WBBH8fxw7nAT06/QPOAF3fBUn6OPos3x3pChD0HCbQReMlIPHV7ELDM1wUJUU86QqY+Q33HhE=",54,28],
+    ["기안84","M","🎨🍜🛋️","꾸밈없어서 더 매력적인 자유로운 영혼 상","https://upload.wikimedia.org/wikipedia/commons/5/5b/190102_%EA%B8%B0%EC%95%8884_%281%29.jpg","https://commons.wikimedia.org/wiki/File:190102_%EA%B8%B0%EC%95%8884_(1).jpg","뉴스인스타","CC BY 3.0","5C3y9dT717034k73qeXbIbLW9vQwGwsQ5oHM5Tf93uyu1h4LBepPA7IHEF8xKAnOKeweVDgKBL4KKMwIKfIR+z389JU8vdgczr6U/39BwCXj5UEb8CDH/WDw408JHB8I0xvQ9Bn7DTPALwH96wDF7DylWD0uOTcMEO2zzBfsNwo=",39,39],
+    ["이수근","M","😆🏃🎤","순발력 천재, 보는 순간 웃음이 나는 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Lee_soo_geun.jpg/500px-Lee_soo_geun.jpg","https://commons.wikimedia.org/wiki/File:Lee_soo_geun.jpg","K-POPIT 케이팝잇","CC BY 3.0","1ikN8+jq8d4p5j3KqQPhVsve6gMbFPwa4ZPU2Q343BLQCB4X/d9QEqPuEmM1Bg3CJ8r+PR0m98gjOb0HLO7r7GwkyK5DxeshybqhAn8xsBPbAUg45gji42XeAkYDEPn25wXh7wng+zywMAsECw3V4z6sQzsZHDE6/Pqv/T3zDPQ=",41,42],
+    ["김구라","M","🧠🎙️😏","날카로운 입담에 지적인 분위기를 더한 상","https://upload.wikimedia.org/wikipedia/commons/1/1d/Kim_GuRa_from_acrofan.jpg","https://commons.wikimedia.org/wiki/File:Kim_GuRa_from_acrofan.jpg","acrofan.com","CC BY-SA 3.0","7AYuA/D3BLAe23fHsrb5Pd7P9gQT+hz63YHL8Af29yiz4Qs08OU7+r8CCVcyJgTeH8wgJzkLDt0VMsT7I+z32lIn5NBA3db/ws2EB38YpQsIJS8m8RbY0zfv50vpDybgABjH8xDoACO3QvgYIO/a/TCSPzYINTU69Q2r4izuGxE=",48,39],
+    ["탁재훈","M","🎤😎🍸","여유가 흘러넘치는 능청 9단 상","https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/%28TV10%29_%ED%83%81%EC%9E%AC%ED%9B%88_%EC%9D%B8%EC%83%9D%EC%9D%98_%ED%9B%84%ED%9A%8C_%EC%95%84%EB%A7%88_%EB%8B%A4_%EC%95%84%EC%8B%A4_%EA%B2%83_%EB%84%88%EC%8A%A4%EB%A0%88_%28tvN_%EB%82%B4%EA%B2%8C_%EB%82%A8%EC%9D%80_48%EC%8B%9C%EA%B0%84_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C%29_1m33s.jpg/500px-%28TV10%29_%ED%83%81%EC%9E%AC%ED%9B%88_%EC%9D%B8%EC%83%9D%EC%9D%98_%ED%9B%84%ED%9A%8C_%EC%95%84%EB%A7%88_%EB%8B%A4_%EC%95%84%EC%8B%A4_%EA%B2%83_%EB%84%88%EC%8A%A4%EB%A0%88_%28tvN_%EB%82%B4%EA%B2%8C_%EB%82%A8%EC%9D%80_48%EC%8B%9C%EA%B0%84_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C%29_1m33s.jpg","https://commons.wikimedia.org/wiki/File:(TV10)_%ED%83%81%EC%9E%AC%ED%9B%88_%EC%9D%B8%EC%83%9D%EC%9D%98_%ED%9B%84%ED%9A%8C_%EC%95%84%EB%A7%88_%EB%8B%A4_%EC%95%84%EC%8B%A4_%EA%B2%83_%EB%84%88%EC%8A%A4%EB%A0%88_(tvN_%EB%82%B4%EA%B2%8C_%EB%82%A8%EC%9D%80_48%EC%8B%9C%EA%B0%84_%EC%A0%9C%EC%9E%91%EB%B0%9C%ED%91%9C%ED%9A%8C)_1m33s.jpg","tenasia10","CC BY 3.0","8AQjBMQA8Osd3kT1qQX/Mr7azAD3IwUJzYHq0A7s6yzbERou6udQ94IRGVhrAgfkOKoRRigjD8YRLsMBGNETBUEM1MImo9sjureCB384vxX57iE41/rTDWXvAVT/BxAR3/bO6iXgCjejSecFHO/fAVi2R0MjKzUJ6POp8yjzIwY=",46,39],
+    ["전현무","M","📺😎🎙️","자신감 만렙, 어디서든 진행 가능한 아나운서 상","https://upload.wikimedia.org/wikipedia/commons/8/89/MBC_%27%EB%82%98_%ED%98%BC%EC%9E%90_%EC%82%B0%EB%8B%A4%27_%EA%B8%B0%EC%9E%90_%EA%B0%84%EB%8B%B4%ED%9A%8C_%EC%A0%84%ED%98%84%EB%AC%B4.jpg","https://commons.wikimedia.org/wiki/File:MBC_%27%EB%82%98_%ED%98%BC%EC%9E%90_%EC%82%B0%EB%8B%A4%27_%EA%B8%B0%EC%9E%90_%EA%B0%84%EB%8B%B4%ED%9A%8C_%EC%A0%84%ED%98%84%EB%AC%B4.jpg","디스패치","CC BY 3.0","zyYy9+ne/tdFyUnvuev2McfR4wQpCxX744HZ5gP66iHByvMi/OtDAJb1/2hVDwXRK64NJS4PGeEfI7jyIN4D6D4o/NQ0weMX07qX6n86vA7w/Uoq5CTg/0/35VQFESf18xyw8SLw+SKuNvYVFtno+0HKJEfwPCYP8+6dBD/2LQE=",57,43],
+    ["송강호","M","🎬🏆😄","평범함 속 비범함, 믿고 보는 국민 배우 상","https://upload.wikimedia.org/wikipedia/commons/d/df/Song_Gangho_2016.jpg","https://commons.wikimedia.org/wiki/File:Song_Gangho_2016.jpg","Ministry of Information and Broadcasting","GODL-India","1g4QAcgF78Umvzfnvf7rO9DTyekaHukE9Jvn6iT82/y9zAk379ou76wRFV1BH/7BNbEZJjciD8AcH+EFP/wR0VgU8MA4w80G0s+OC39FuATvCkse9f/m92nt7jgV/Rz+4hXG+R3oFjzET+0THwDG/lHNQjwaLzk+9heU3SzrIx8=",54,46],
+    ["황정민","M","🎬🔥💪","열정이 얼굴에 보이는 천만 배우 상","https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/Hwang_Jung-min_in_July_2026_%28cropped%29.jpg/500px-Hwang_Jung-min_in_July_2026_%28cropped%29.jpg","https://commons.wikimedia.org/wiki/File:Hwang_Jung-min_in_July_2026_(cropped).jpg","Republic of Korea","CC BY-SA 4.0","vSMuCMfs69gU623xsNPwRsnX6Acg9gIP7IHj4AzT3QW3yPwl6+9ECJghAX9bHwzXKrUUPzUPD8cWJLEZJtoa4Fwi38M429gOvbKBDn81ow3WADow/QPV8EP84VD4ByIV1xbI5w7JFSiwOPotA/vJCzqYf1cTK0gQ8Pa87h71PR8=",48,30],
+    ["조진웅","M","🐻🎬🖤","묵직한 존재감, 든든한 형님 상","https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Actor_Cho_Jin-woong_arrives_at_the_red_carpet_event_of_the_Pifan_in_Bucheon_on_July_17%2C_2014.jpg/500px-Actor_Cho_Jin-woong_arrives_at_the_red_carpet_event_of_the_Pifan_in_Bucheon_on_July_17%2C_2014.jpg","https://commons.wikimedia.org/wiki/File:Actor_Cho_Jin-woong_arrives_at_the_red_carpet_event_of_the_Pifan_in_Bucheon_on_July_17,_2014.jpg","https://www.flickr.com/photos/koreanet","CC BY-SA 2.0","9CcU99r85sIf2mDXs+3ZQ6/j3ekTHhgJ3YXk3xvp3hLU9goq+epH/bH5HGReE/vJH8AOMRUjAeEVM+kFKsgG+FgJ4rsTt7sZ1dmB8n8fthD+6l5B7PnC/GDY9VPvIxMe3Cfo70DtBDG7MO4aPOHm51q1ME0KITsu8gOfBBzrGgM=",50,21],
+    ["이병헌","M","🎬🍷🖤","눈빛 하나로 연기 끝, 깊이 있는 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/Lee_Byung-hun_2025_Toronto_%28cropped%29.jpg/500px-Lee_Byung-hun_2025_Toronto_%28cropped%29.jpg","https://commons.wikimedia.org/wiki/File:Lee_Byung-hun_2025_Toronto_(cropped).jpg","Desmond Herzfelder","CC BY 4.0","6CIU9tPzy9kN01HnwfHrOpzQ6uMNJfTs44HS6CTl1hO13iIQ8+c0B78UHGRZEfbUIsEiSxk/+dcGGuD/Ke/77EIZ6JEox8UWyNaTAX8guRfo3Tsg+g7wCWru0j/3FjYd9vrC4hzf3ETPVAIZA/XZ+kOwXEgfKiwS7/Ot1RcNEwY=",45,42],
+    ["정우성","M","🌹🖤✨","세월을 이긴 클래식 미남 비율","https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/20210305%E2%80%94Jung_Woo_Sung_%EC%A0%95%EC%9A%B0%EC%84%B1%2C_The_Hyundai_Seoul%2C_Yeouido%2C_Seoul_%2800m11s%29.jpg/500px-20210305%E2%80%94Jung_Woo_Sung_%EC%A0%95%EC%9A%B0%EC%84%B1%2C_The_Hyundai_Seoul%2C_Yeouido%2C_Seoul_%2800m11s%29.jpg","https://commons.wikimedia.org/wiki/File:20210305%E2%80%94Jung_Woo_Sung_%EC%A0%95%EC%9A%B0%EC%84%B1,_The_Hyundai_Seoul,_Yeouido,_Seoul_(00m11s).jpg","사진기자머길","CC BY 3.0","0DkT9MwU680w12v1r/fjO57T6uEuJP33ypDW4DL46Ou08BIH/+NF660OGVxiDfC7Hr4YTgs1+MYIJN/uJOsK8EX/2J0sytUrv7yDFX80rhfi9VYvB+/PEV7Y31gIFR5F5BTQ8ykI+UvLTgYN/t3qAUKkVEIFQTEe9PKj5RP2JAY=",57,28],
+    ["공유","M","☕🧥🍁","다정함이 묻어나는 따뜻한 남자 상","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Gong_Yoo_in_2021_-_3.png/500px-Gong_Yoo_in_2021_-_3.png","https://commons.wikimedia.org/wiki/File:Gong_Yoo_in_2021_-_3.png","Marie Claire Korea","CC BY 3.0","6i//5scK6tgt2lrksebZLcC45/M4GPIQwYPY8ATx5CK9/hoN/uxO/JkxKWVgFe3KMs8YYy4lCscEJOzNAucHzlMI1LIo0cUjr9CPH38zqjb2BTYu2QfcA1vr3kwKLSQB7A7K/BkE8kS8NAMR9vvnAB+PSiAaNUwO9vio7FH3NwE=",49,34],
+    ["손석구","M","🍷😏🖤","무심한 듯 섹시한 분위기 장인","https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/20220801_Son_Seok-koo_%EC%86%90%EC%84%9D%EA%B5%AC_Marie_Claire_Korea_%281%29.jpg/500px-20220801_Son_Seok-koo_%EC%86%90%EC%84%9D%EA%B5%AC_Marie_Claire_Korea_%281%29.jpg","https://commons.wikimedia.org/wiki/File:20220801_Son_Seok-koo_%EC%86%90%EC%84%9D%EA%B5%AC_Marie_Claire_Korea_(1).jpg","Marie Claire Korea","CC BY 3.0","xDMCDOsK4uUwzVAHvubtS8Sp3e4CJdkY7oTf8Brf5RLD+hki8/JPJrEFDH8+CADfNq0EWjcnBM0TLLgZFNz16GEt155Av80n0bGNEX9CuioF6T1H2Qze/GYg2jwDDx0N9/LK5vX2+THfTv0f7gzYAy6mTTAZKDUc8u2o3yTnKwA=",39,34],
+    ["류준열","M","🦊📸🌿","개성 있는 얼굴, 볼수록 매력적인 상","https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/160225_%EB%A5%98%EC%A4%80%EC%97%B4_%EB%A7%A5%EC%8A%A4%EB%AC%B4%EB%B9%84_%EC%B5%9C%EA%B3%A0_%EC%98%81%ED%99%94%EC%83%81_%EC%8B%A0%EC%9D%B8%EC%83%81_%EC%86%8C%EA%B0%90%EB%B0%9C%ED%91%9C.jpg/500px-160225_%EB%A5%98%EC%A4%80%EC%97%B4_%EB%A7%A5%EC%8A%A4%EB%AC%B4%EB%B9%84_%EC%B5%9C%EA%B3%A0_%EC%98%81%ED%99%94%EC%83%81_%EC%8B%A0%EC%9D%B8%EC%83%81_%EC%86%8C%EA%B0%90%EB%B0%9C%ED%91%9C.jpg","https://commons.wikimedia.org/wiki/File:160225_%EB%A5%98%EC%A4%80%EC%97%B4_%EB%A7%A5%EC%8A%A4%EB%AC%B4%EB%B9%84_%EC%B5%9C%EA%B3%A0_%EC%98%81%ED%99%94%EC%83%81_%EC%8B%A0%EC%9D%B8%EC%83%81_%EC%86%8C%EA%B0%90%EB%B0%9C%ED%91%9C.jpg","unplugge7","CC BY 4.0","9CYV3Mfm2Ngz61v6pdzZQ7vUAAkwGSMJ44nX/eXb8SK38RQo8dwxB5UcF1pVBAa9G78PTAsH/swKNejyLO39108ayaYf08Mys7aeA38VsB3nECNEAyDF/WDa5mgGLRYJ+SG09RLo4TDTKAQUAOXf8TKjYz01JUIlA+S9AyXxI/w=",49,33],
+    ["유해진","M","🌾😄🎬","푸근한 웃음 속 연기 내공, 믿고 보는 상","https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/%28%ED%83%80%EC%A7%9C-%EC%8B%A0%EC%9D%98_%EC%86%90%29_%EC%A3%BC%EA%B1%B0%EB%8B%88_%EB%B0%9B%EA%B1%B0%EB%8B%88_%ED%86%A0%ED%81%AC_%EC%98%81%EC%83%81_%28%EC%9C%A0%ED%95%B4%EC%A7%84%29.jpg/500px-%28%ED%83%80%EC%A7%9C-%EC%8B%A0%EC%9D%98_%EC%86%90%29_%EC%A3%BC%EA%B1%B0%EB%8B%88_%EB%B0%9B%EA%B1%B0%EB%8B%88_%ED%86%A0%ED%81%AC_%EC%98%81%EC%83%81_%28%EC%9C%A0%ED%95%B4%EC%A7%84%29.jpg","https://commons.wikimedia.org/wiki/File:(%ED%83%80%EC%A7%9C-%EC%8B%A0%EC%9D%98_%EC%86%90)_%EC%A3%BC%EA%B1%B0%EB%8B%88_%EB%B0%9B%EA%B1%B0%EB%8B%88_%ED%86%A0%ED%81%AC_%EC%98%81%EC%83%81_(%EC%9C%A0%ED%95%B4%EC%A7%84).jpg","lotteent (official Lotte Entertainment YouTube account) Veri","CC BY 3.0","4SQkAdn40L8W02kAw8ryP7XO3vsiCRD25IfU7TEA4Oyh5AYe+ug0+LYZB0xUERTRI78YRSkq/tYLLugLM+30200P1aUe19oavtOEDn8lshXUCSwjEQrYAk3a/1b/HgkU9RLnBgvyCRfZO/4vH/XU5DGiXk0PJzk+7wS56AvwDAw=",48,42],
+    ["진선규","M","🎬😄💛","선한 미소와 반전 카리스마","https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Jin_Seon-kyu_in_2019.png/500px-Jin_Seon-kyu_in_2019.png","https://commons.wikimedia.org/wiki/File:Jin_Seon-kyu_in_2019.png","SBS Radio 에라오","CC BY 3.0","6yr19tr99bsu4n3ryc3pMq/W2v8P5iAP7YHM5zvj4/qruAwO9epU8rkkG3ZUKwDdM9AYLUIK7uwDKs8EL+7+3lgc5LUxxucLyMqUCH8rwQbo/CYr7xDW9ljm6VYAFSII3hXB/wn0DyfMNfIgGv7k0DSsPEgeIjYkBhmy6xfmLQE=",53,39],
+    ["이서진","M","🍷🧳😏","무심하게 챙겨주는 츤데레의 정석","https://upload.wikimedia.org/wikipedia/commons/5/55/190812_%EC%9D%B4%EC%84%9C%EC%A7%84.jpg","https://commons.wikimedia.org/wiki/File:190812_%EC%9D%B4%EC%84%9C%EC%A7%84.jpg","NewsInStar","CC BY 3.0","3Dj9COL89tE84D/1r//hLrzEyuQnKP4B0Znd6AblAwmy8iMJ9fdHC7QUCn9HF+rLILIQWCciC9kXLMoAOdz16lIf2rA1yM4U0LqWCH81qg/cHEMS0/bYBmf0zT0K8Bz39QK+9wft9EDBQwz4+wnD/TaVZDkVMiAm8wm1zC0MJPs=",52,33],
+    ["박서준","M","😎🔥💛","로코 장인의 다정한 미소","https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Park_Seo-joon_for_Marie_Claire_Korea%2C_2023_%282%29.jpg/500px-Park_Seo-joon_for_Marie_Claire_Korea%2C_2023_%282%29.jpg","https://commons.wikimedia.org/wiki/File:Park_Seo-joon_for_Marie_Claire_Korea,_2023_(2).jpg","Marie Claire korea","CC BY 3.0","4jwS5dgEzeAp0kf3y+/iOcfM9vYcHO4CvIfm6wzo7hXABhYsAvNJGZQXHWI9Ag6xR84IUgUsBtMaKNsCHPv86Uwa6ZlI1L00z8iPD387vijg6kUv5g71Bn//7z4RNAsK2Bi94CLxBlamRhAGFS7d9ziyZDs0GF8YAuuw6yb1FwE=",50,26],
+    ["남주혁","M","🏀🌿😊","청량한 모델 비율, 청춘 그 자체","https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Nam_Joo-hyuk_%EB%82%A8%EC%A3%BC%ED%98%81_-_Photoshoot_for_Marie_Claire_Korea_in_December_2020_%282%29.jpg/500px-Nam_Joo-hyuk_%EB%82%A8%EC%A3%BC%ED%98%81_-_Photoshoot_for_Marie_Claire_Korea_in_December_2020_%282%29.jpg","https://commons.wikimedia.org/wiki/File:Nam_Joo-hyuk_%EB%82%A8%EC%A3%BC%ED%98%81_-_Photoshoot_for_Marie_Claire_Korea_in_December_2020_(2).jpg","Marie Claire Korea","CC BY 3.0","8g749N735egu2ULnqxDpNL7M3QcXCfsf5IzM3RLx4uu9+xQN4OVPDI4mF2o3KQLGMa8VVyAjC8gQMswhHAoV0VoLvbomqeA+ypSQDX8/zBry6jRE9Rvf+Xjh91IFHv0c5/TGAfTw7B7KOAfz5xjM6TuRUk04GikT9fSq5R72H/o=",37,37],
+    ["송중기","M","🌸🎖️😊","꽃미남과 상남자 사이 완벽한 밸런스","https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Song_Joong-ki_at_Style_Icon_Asia_2016.jpg/500px-Song_Joong-ki_at_Style_Icon_Asia_2016.jpg","https://commons.wikimedia.org/wiki/File:Song_Joong-ki_at_Style_Icon_Asia_2016.jpg","Pabian","CC BY 4.0","yykdCefm8N4c3lXVuPPqR8XW4gUlFuwY4oPs3Abm3AO+9w0lA/9KCpkeHnVEIw3CLK8XPiwo87sQHL0VP/L59Gwkz7gltNgpz76LDH8xtBfWBEg09RHgBWf2+kQRDf4E7QLd7QL5CCqfUPwOCwvtBjKhWTofJycm9vyl9SjyOAc=",69,51],
+    ["현빈","M","🪖🍷🖤","클래식한 남자다움, 정석 미남 상","https://upload.wikimedia.org/wikipedia/commons/thumb/6/60/Hyun_Bin_at_the_2024_Toronto_International_Film_Festival_2_%28cropped%29.jpg/500px-Hyun_Bin_at_the_2024_Toronto_International_Film_Festival_2_%28cropped%29.jpg","https://commons.wikimedia.org/wiki/File:Hyun_Bin_at_the_2024_Toronto_International_Film_Festival_2_(cropped).jpg","John Sears","CC BY-SA 4.0","5C8T/Oby2tE2uWP3vdPvLa67BAA7B+kT2IHN7xbb5Pqt6gkrDPc87qknHGtjLu3IQLAtRCEoEqsJHsYEFuga/Vgj5Zc1n9Yv08uEBX82tjHx+lQlBwLF/XAF41H6GioM5hK+9f796je7PvYX7fbNEDGEdSsZPC0b/9mn6RHqPQc=",47,23],
+    ["정국","M","🐰🎤💪","황금 막내 에너지, 귀여움과 멋짐 공존","https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Jung_Kook_of_BTS%2C_February_12%2C_2026_%281%29.png/500px-Jung_Kook_of_BTS%2C_February_12%2C_2026_%281%29.png","https://commons.wikimedia.org/wiki/File:Jung_Kook_of_BTS,_February_12,_2026_(1).png","K-POPIT 케이팝잇","CC BY 4.0","0R4V6eTt288f12Tent3xUKy29xwcDAQZv4HT/Pnu6/2pACpACdpA/4YRJmk/Bve2LcAlRBMbCswTONDnJwMYzz4Qz5UzytE3xbyB9H8tsxzy9C41ECLJDXXw9EwFERUX4g+x8gAT+krBNhj9+w/U6SCSUjczEzIU8e+u7Rn4NAc=",51,43],
+    ["지민","M","🐥💃✨","웃을 때 사라지는 눈, 사랑스러움 끝판왕","https://upload.wikimedia.org/wikipedia/commons/3/33/Jimin_on_the_way_to_SBS_Radio%2C_31_March_2023_%282%29.jpg","https://commons.wikimedia.org/wiki/File:Jimin_on_the_way_to_SBS_Radio,_31_March_2023_(2).jpg","K-POPIT 케이팝잇 TV10","CC BY 3.0","3wgP5Mv54ssl2lbOmefeSM3L9gYYFQgx44fN5tnl0wq34h84Bt4lCJ4bJ2g6Gf21IcQiNSQG98QGP+AMLukI1V4dz6Qnyswmt7aHEn8lqRXaFipGFxrI+2XX/mAAFxYM3xe38QQE/yq3Hf3yBOzc4zyWQDtFLjUlBumxBzb2IAU=",49,36],
+    ["RM","M","🧠🐨🎤","똑똑함과 귀여운 보조개의 조화","https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/RM_at_W_Korea_Love_Your_W%2C_November_2023.jpg/500px-RM_at_W_Korea_Love_Your_W%2C_November_2023.jpg","https://commons.wikimedia.org/wiki/File:RM_at_W_Korea_Love_Your_W,_November_2023.jpg","K-POPIT 케이팝잇","CC BY 3.0","2SQO9tr37tMt3FzZqNftUKrS+gw7BAoX0ILl2xPt2POv7PwJBN8/94QNHU87JwGzKb4QPRAD6MAXH6kLJe798k4Z3qgwuNwsz6mB8X8fvCHs+ElO/xDE/l3Y/mIOBwYt1RnW6C///zmrMfz8D+Dr5yuzRUsoKzEc+O+W/CrhMAU=",44,33],
+    ["진","M","🐹🍓👑","자신감까지 잘생긴 월드와이드 핸섬","https://upload.wikimedia.org/wikipedia/commons/b/b8/BTS_Jin_on_June_12%2C_2024_%283%29.jpg","https://commons.wikimedia.org/wiki/File:BTS_Jin_on_June_12,_2024_(3).jpg","K-POPIT 케이팝잇","CC BY 3.0","0A3709D17cQ7zlThq93jRcPSAxAv8wgrzZe+9O/o7QO16QsfCt8+A5seE1kvF/6yPcwaOhsF7sciPccFIO0D3Dwk06QrzN4atKiBC382rBfsDzNKBQvW9Vfh92MPIAoR2BrSBAv8ADevQAD79frf6ySmS0ouNDooAQW4/zDoKf8=",46,21],
+    ["임영웅","M","🎤💙🌟","부드러운 미소에 마음이 녹는 히어로 상","https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Temp_1662384481565.-511956263.jpg/500px-Temp_1662384481565.-511956263.jpg","https://commons.wikimedia.org/wiki/File:Temp_1662384481565.-511956263.jpg","썸네일고대빵","CC BY-SA 4.0","3y0V6MTu0csy3G7Yl+juSb7S9QQiCRIewYHH3drh3f+18QUbBNkw74oWKlFIDAPMI9z/OhIL9tECOtbhHOsA3mgk0KonxNMiqrSBBX8TrBjgCCY4CxnAAnbRAl0EJhIQ1wzCAgUD6jC+HRb8+AnfzTSgRD0sLzEe6/qv/jPwKv4=",55,22],
+    ["이찬원","M","🎤😊🍀","싹싹함이 얼굴에 보이는 국민 손주 상","https://upload.wikimedia.org/wikipedia/commons/9/92/%EA%B0%80%EC%88%98_%EC%9D%B4%EC%B0%AC%EC%9B%90.jpg","https://commons.wikimedia.org/wiki/File:%EA%B0%80%EC%88%98_%EC%9D%B4%EC%B0%AC%EC%9B%90.jpg","SBS Radio 에라오","CC BY 3.0","5vr87cP25tgf3Dv1n/LqLcW48fAYFfIi0J7R3Qj17QS+9SEY89lEGqwYDXk6+grQOqUVTzgTDsoaSb8mIgQO0lMSyaUsvsMqvKyRGH9Msh3m9ysn7RPVAmv07loSHhf/5ATD+fXsDDHMRfz43//BBjiXTDpTHTD5+vKy7yrgHwY=",38,39],
+    ["성시경","M","🎤🍷🌙","부드러운 발라더 감성, 듣기 좋고 보기 좋은 상","https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/N27122378284952.jpg/500px-N27122378284952.jpg","https://commons.wikimedia.org/wiki/File:N27122378284952.jpg","Jounarl","CC BY-SA 4.0","8gIECMwD8+UryUzgtfvrR9a22hIZHBAZ0oHg6Pn85CfLCiE0AeVT/YYLFl5EBvvNIqYXPgEqBdcaMNbnAfEH2ksM3rYgr9Qsva6EAH9CtiwM+z42Ah3MDGjl7F0FJCUZBwaz9xsN9iO/NfQGD/zW8DuoLzoiNjMX8Oqb/DcCGgo=",44,35],
+    ["박재범","M","🕺🔥🌴","자유로운 힙스터 에너지","https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/Jay_Park_in_September_2024.jpg/500px-Jay_Park_in_September_2024.jpg","https://commons.wikimedia.org/wiki/File:Jay_Park_in_September_2024.jpg","Ten Asia","CC BY 3.0","8CcN5dz64Mw101rgtNfrRrDF8xE0Cf4OyInX8v3dyPWq2wst7d45AZkjHVJKGwa7K88PSB0g99IAL+QDLvAL10kJ26gmw78ayLmD938mrhrv9jZADDPS/nfj/1MHIxkG6BfG9gvu9DjJPQQO/QLa5DauRUooHTwu9gah8B32Owc=",54,40],
+    ["지코","M","🎤🔥😎","무대 위 카리스마, 힙한 아티스트 상","https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/ZICO_Damiani_May_2024.jpg/500px-ZICO_Damiani_May_2024.jpg","https://commons.wikimedia.org/wiki/File:ZICO_Damiani_May_2024.jpg","티비텐","CC BY 3.0","6Q/x69YB4eUz4lHZnOzLUMrI8B4tJRQj2YHL1/Pa7AnBARwTC9ZREYkZFG0vFv2kI8cXSxAO9N8cLcfpIQX7w1kFyq8yvdQwv66P+n8ysznlCCRFBCbd/WjTBmEMFxcK9wXRBg8I+Ce2MgfwEPTh5TyVSCo3JjM04+mW90LwIvk=",46,37],
+    ["양세형","M","😂🧠⚡","장난기 가득한 눈빛의 순발력 천재","https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Yangsehyungin2020.png/500px-Yangsehyungin2020.png","https://commons.wikimedia.org/wiki/File:Yangsehyungin2020.png","K-POPIT 케이팝잇","CC BY 3.0","7h4Z+u/w6s8n53nQk7gIOMzJ4wAb8RgD1IHT2wLN5Qe07gMG8OQ/8qcABmNGKAjHItsfTC8O++IAKbn9KvHUxVgWwq4rxtQSsK2BDn8Vnwrs/x8+9A/b9UfT8kfyEP/+6RzP+xH18CLFRRcLGvLUyiuLRE9DJyYzABCa9S7+D/o=",48,46],
+    ["문세윤","M","🍗😆🎤","맛있게 먹고 맛있게 웃기는 행복 바이러스","https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/%EB%AC%B8%EC%84%B8%EC%9C%A4_2022.jpg/500px-%EB%AC%B8%EC%84%B8%EC%9C%A4_2022.jpg","https://commons.wikimedia.org/wiki/File:%EB%AC%B8%EC%84%B8%EC%9C%A4_2022.jpg","티비텐","CC BY 3.0","3jn+/dkBzOIx6U7vp9TjSrrH6gwZBAYJ9IHm1wXfyRK02QwN//pGFbMPCXlNKRTPKssaWTobBdUKGtEIHfzy2m8V57RB28b3srmEDHo2oyjr7yM77xnp913i8kYDCBL48wq36Bfx9TC5HQAL/wDV3DW5ZksuJDIiCAC03DkKEg8=",43,35],
+    ["김준현","M","🍖😄👍","먹을 때 제일 행복해 보이는 푸근한 상","https://upload.wikimedia.org/wikipedia/commons/5/5b/%EA%B9%80%EC%A4%80%ED%98%84.png","https://commons.wikimedia.org/wiki/File:%EA%B9%80%EC%A4%80%ED%98%84.png","NewsInStar","CC BY 3.0","yCUj/t7j6sQx3TbiuPbeVMbI4eEbIvwO2Jfm5Pnv1CjN7C4eAd06Da7/KWNNBQW6O6ICPRUjJcMNINwCG9vr3kIz5L821tIV2sWq7n8sqCHe/Tcu9APp8mPmBEcDBREI2A3T1RTvAyqlNAMFC/D6CietSDj2PRMoAfTR4SkG+v8=",59,31],
+    ["최민식","M","🎬🔥🗿","한 번 보면 잊히지 않는 묵직한 연기 내공","https://upload.wikimedia.org/wikipedia/commons/thumb/5/5d/Choi_Min-sik.jpg/500px-Choi_Min-sik.jpg","https://commons.wikimedia.org/wiki/File:Choi_Min-sik.jpg","che (Please credit as \"Petr Novák, Wikipedia\" in case you us","CC BY-SA 3.0","7w4vBeAF09gn4lsJxfHrOsvQ2OjvFgjt6oHj1RoM2BK42zEU4OxRAcYbGFtXFhbCN8kqVT86HuUcFeIVK/4B6E/91bYx8NMgs8GaGn8wqBLW1yQoA+Ly/2Ds4TL9CQUr4BPJ3RcFBCvFSvwVHQTZ9TOoYS8dISYg//y5wwkYGBU=",50,50],
+    ["설경구","M","🎬🖤💪","강인함과 따뜻함이 공존하는 얼굴","https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Sol_Kyung-gu-9435.jpg/500px-Sol_Kyung-gu-9435.jpg","https://commons.wikimedia.org/wiki/File:Sol_Kyung-gu-9435.jpg","Harald Krichel","CC BY-SA 4.0","1yAgAPUD3sUb3X70pNvoWKjT4QQOAwwG94HN5y31v/Ky0Rgk7OBB8sYSIGFUJB7DJrsZNkU0BLkGN+0SGv0Z8F8Bz6wu7NwWs72BDX8TuiHi5B8p/gPKAGja+jXsFhAv4BvH7gz7/SXINfoYA+fOAzyiZFQcIDYb/QSn4iT2JAw=",48,39],
+    ["윤종신","M","🎤🎹😄","음악 감성 가득한 다정한 형 상","https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Yoon_Jong-shin_at_%22Persona%22_press_conference%2C_27_March_2019.jpg/500px-Yoon_Jong-shin_at_%22Persona%22_press_conference%2C_27_March_2019.jpg","https://commons.wikimedia.org/wiki/File:Yoon_Jong-shin_at_%22Persona%22_press_conference,_27_March_2019.jpg","디스패치 / Dispatch","CC BY 3.0","6yAvDNkP1tkjy2wCo9/kQMbh8AQTJxv92Ijd9ADb0RPN+hQs6PBKDbT/9XVjBPS/K6ocRhsg9tQGLuP3GcL75zMJ16Uhxswiv7mBAX84pA3w9zJE/wbIB0jU51UFJiUW6hG26Q/0BjnFVQAKJdbN7kmpNEItO0Qx6Pmr+BcEHf8=",52,47],
+    ["노홍철","M","🦄😆🌈","긍정 에너지 무한대, 유쾌함이 넘치는 상","https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/140807_%EB%85%B8%ED%99%8D%EC%B2%A0_01.jpg/500px-140807_%EB%85%B8%ED%99%8D%EC%B2%A0_01.jpg","https://commons.wikimedia.org/wiki/File:140807_%EB%85%B8%ED%99%8D%EC%B2%A0_01.jpg","Park Dae ung","CC BY 4.0","xCwI7+X69Oww6DvdqvHJMcfH1NwtO+AE7pTu6gni6QO37x0RA/dFA88XJ3k/IerQL7sKYywyBcAHMuEWGfD97VIHz64Zx98Wycy3HH8vqxPa9j0Y2fjQBGQA6kAMEf/+2Qrj7w3u+DrPP/8T6wXrBCvBWy0bNikgBAy/3SEGMAA=",56,47],
+    ["이승기","M","🎤😊📚","엄친아의 정석, 바른 청년 상","https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/190105_%EC%9D%B4%EC%8A%B9%EA%B8%B0.png/500px-190105_%EC%9D%B4%EC%8A%B9%EA%B8%B0.png","https://commons.wikimedia.org/wiki/File:190105_%EC%9D%B4%EC%8A%B9%EA%B8%B0.png","Newsen","CC BY 3.0","1CwHAM4K89dH0VLvnN3xQrmr7AMeAR8V24Hb6AjS3gCv7vYW+Nxd/J8PAWRLFvLVKsMYSikVAb4EFvP1DfsT2l0K468ky9U0tcGIBH8cqv36/ypD6g2892HszlITKhoN/hTHBRQB3jfaIP4U7wnD5i2eQ0kSISkn8RGu8jT4KA8=",52,35],
+    ["김래원","M","🎬🌙😎","부드러움 속 남성미가 있는 상","https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/%EA%B9%80%EB%9E%98%EC%9B%90_Kim_Rae_won_20190611.jpg/500px-%EA%B9%80%EB%9E%98%EC%9B%90_Kim_Rae_won_20190611.jpg","https://commons.wikimedia.org/wiki/File:%EA%B9%80%EB%9E%98%EC%9B%90_Kim_Rae_won_20190611.jpg","SBS Radio","CC BY 3.0","4C4PAt3+380u1FDy19TpPr244wIqD+wF1YLh5QzqzPqt2wss//kw+JobKWVXHv+6LcUlMiYw98IKNNoELOzy8Fon7qI5w8UZ2MaBCH8wnxDqB1Uk8BjK/HUC9joUEyYS7xyo4BH+9T+7Sw8PCvzr9Ti6SDkvOjkt8euN/SnxMBY=",57,33],
+  ];
+  // ---- CELEBS:END
+  const CELEBS = CELEB_ROWS.map(([name, g, emoji, quote, photo, page, credit, license, vec, fx, fy]) => ({
+    name, g, emoji, quote, photo, page, credit, license, fx, fy,
+    vec: vec ? decodeVec(vec) : null,
+  }));
 
   const OBJECTS = [
     { max: 17.8, tag: "📱 아이폰 미니 1.4대", sub: "주머니에 쏙" },
@@ -389,7 +472,8 @@ body {
     "동공 거리 기준 비율 환산 중...",
     "이목구비 여백 스캔 중...",
     "턱선 각도 계산 중...",
-    "연예인 DB 대조 중...",
+    "얼굴 특징 128개 추출 중...",
+    "연예인 98명과 닮은꼴 대조 중...",
   ];
   const GUESS_MSGS = [
     "얼굴이 수줍어하네요... 어림짐작 모드 ON",
@@ -442,6 +526,89 @@ body {
       faceMesh.reset();
       faceMesh.send({ image: source }).catch(reject);
     });
+  }
+
+  // ---------- face recognition (look-alike matching) ----------
+  let recogReady = null;
+  function initRecog() {
+    if (recogReady) return recogReady;
+    recogReady = (async () => {
+      const fa = window.faceapi;
+      if (!fa) throw new Error("face-api script not loaded");
+      await Promise.all([
+        fa.nets.faceRecognitionNet.loadFromUri(FACEAPI_MODELS),
+        fa.nets.ageGenderNet.loadFromUri(FACEAPI_MODELS),
+      ]);
+    })().catch((err) => {
+      console.error(err);
+      recogReady = null;
+      throw err;
+    });
+    return recogReady;
+  }
+
+  // Square crop around the mesh, rotated so the eyes are level. Celeb vectors were made the same way.
+  function alignedFace(src, pts, size) {
+    const a = pts[LM.irisR], b = pts[LM.irisL];
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    let cx = 0, cy = 0;
+    pts.forEach((p) => { cx += p.x; cy += p.y; });
+    cx /= pts.length; cy /= pts.length;
+    const cos = Math.cos(-ang), sin = Math.sin(-ang);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    pts.forEach((p) => {
+      const rx = (p.x - cx) * cos - (p.y - cy) * sin, ry = (p.x - cx) * sin + (p.y - cy) * cos;
+      minX = Math.min(minX, rx); maxX = Math.max(maxX, rx); minY = Math.min(minY, ry); maxY = Math.max(maxY, ry);
+    });
+    const side = Math.max(maxX - minX, maxY - minY) * 1.08;
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#808080"; ctx.fillRect(0, 0, size, size);
+    ctx.translate(size / 2, size / 2);
+    ctx.scale(size / side, size / side);
+    ctx.translate(-(minX + maxX) / 2, -(minY + maxY) / 2);
+    ctx.rotate(-ang);
+    ctx.translate(-cx, -cy);
+    ctx.drawImage(src, 0, 0);
+    return c;
+  }
+
+  async function faceSignature(src, pts) {
+    await initRecog();
+    const fa = window.faceapi;
+    const desc = await fa.computeFaceDescriptor(alignedFace(src, pts, 150));
+    const ag = await fa.nets.ageGenderNet.predictAgeAndGender(alignedFace(src, pts, 112));
+    return { desc: Array.from(desc), gender: ag.gender === "female" ? "F" : "M", gprob: ag.genderProbability };
+  }
+
+  function decodeVec(b64) {
+    const bin = atob(b64);
+    const v = new Float32Array(bin.length);
+    for (let i = 0; i < bin.length; i++) v[i] = ((bin.charCodeAt(i) << 24) >> 24) / 400;
+    return v;
+  }
+  function encodeVec(desc) {
+    let s = "";
+    for (const x of desc) s += String.fromCharCode(clamp(Math.round(x * 400), -127, 127) & 255);
+    return btoa(s);
+  }
+
+  // same person ~0.25, closest different celeb usually 0.39-0.48, median stranger ~0.6
+  const simPct = (d) => clamp(Math.round(100 - (d - 0.25) * 110), 40, 99);
+
+  // gender: "F" | "M" | "all" | undefined (= use the model guess when it is confident)
+  function matchCelebs(sig, gender) {
+    let pool = CELEBS.filter((c) => c.vec);
+    const g = gender || (sig.gprob >= GENDER_SURE ? sig.gender : "all");
+    const sure = g !== "all";
+    if (sure) pool = pool.filter((c) => c.g === g);
+    const ranked = pool.map((c) => {
+      let d = 0;
+      for (let i = 0; i < 128; i++) { const t = sig.desc[i] - c.vec[i]; d += t * t; }
+      return { celeb: c, d: Math.sqrt(d) };
+    }).sort((x, y) => x.d - y.d);
+    return { top: ranked.slice(0, 3).map((m) => ({ celeb: m.celeb, sim: simPct(m.d) })), gender: sure ? g : null };
   }
 
   // ---------- camera ----------
@@ -543,9 +710,13 @@ body {
         seed = pixelHash();
         metrics = guessMetrics(seed);
       }
-      const result = classify(metrics, seed);
-      result.thumb = thumbnail(pts);
+      // look-alike matching runs while the scan animation plays
+      const sigP = pts ? faceSignature(photo, pts).catch((err) => { console.warn(err); return null; }) : Promise.resolve(null);
       await scanAnimation(pts);
+      const sig = await sigP;
+      const result = classify(metrics, seed, sig ? matchCelebs(sig) : null);
+      result.thumb = thumbnail(pts);
+      result.sig = sig;
       hud.hidden = true;
       lastResult = result;
       renderResult(result);
@@ -560,15 +731,15 @@ body {
 
   // Try the photo as-is, then zoomed in (small faces), then shrunk with padding (faces filling the frame).
   // Returns landmarks in photo pixel coordinates for the largest face, or null.
-  async function detectBest() {
-    const W = photo.width, H = photo.height;
-    const views = [{ canvas: photo, ox: 0, oy: 0, sx: W, sy: H }];
+  async function detectBest(src = photo) {
+    const W = src.width, H = src.height;
+    const views = [{ canvas: src, ox: 0, oy: 0, sx: W, sy: H }];
 
     const cs = Math.round(Math.min(W, H) * 0.6);
     const cx = Math.round((W - cs) / 2), cy = Math.round((H - cs) * 0.4);
     const crop = document.createElement("canvas");
     crop.width = crop.height = cs;
-    crop.getContext("2d").drawImage(photo, cx, cy, cs, cs, 0, 0, cs, cs);
+    crop.getContext("2d").drawImage(src, cx, cy, cs, cs, 0, 0, cs, cs);
     views.push({ canvas: crop, ox: cx, oy: cy, sx: cs, sy: cs });
 
     const padX = Math.round(W * 0.3), padY = Math.round(H * 0.3);
@@ -576,7 +747,7 @@ body {
     pad.width = W + padX * 2; pad.height = H + padY * 2;
     const pctx = pad.getContext("2d");
     pctx.fillStyle = "#808080"; pctx.fillRect(0, 0, pad.width, pad.height);
-    pctx.drawImage(photo, padX, padY);
+    pctx.drawImage(src, padX, padY);
     views.push({ canvas: pad, ox: -padX, oy: -padY, sx: pad.width, sy: pad.height });
 
     for (const v of views) {
@@ -644,7 +815,7 @@ body {
     return { lenCm, widCm, bold, balance, rough, noFace: false };
   }
 
-  function classify(m, seed) {
+  function classify(m, seed, match) {
     const { lenCm, widCm, bold, balance } = m;
 
     // size percentile: smaller face = better rank
@@ -659,24 +830,26 @@ body {
     const groupKey = tier === "small" ? (flashy ? "A" : "B") : tier === "mid" ? "C" : "D";
     const group = GROUPS[groupKey];
 
-    const rnd = mulberry32(seed);
-    let best = null, bestScore = Infinity;
-    for (const c of group.celebs) {
-      const s = (c.shape === shape ? 0 : 28) + Math.abs(c.bold - bold) * 0.5 + rnd() * 14;
-      if (s < bestScore) { bestScore = s; best = c; }
+    // no usable face fingerprint: fall back to a stable pick so there is still a result
+    let top = match && match.top.length ? match.top : null;
+    if (!top) {
+      const rnd = mulberry32(seed);
+      const pool = CELEBS.slice();
+      top = [0, 1, 2].map(() => ({ celeb: pool.splice(Math.floor(rnd() * pool.length), 1)[0], sim: Math.round(55 + rnd() * 20) }))
+        .sort((a, b) => b.sim - a.sim);
     }
-    const vibe = clamp(Math.round(97 - bestScore * 0.6), 62, 99);
 
     const obj = OBJECTS.find((o) => lenCm <= o.max);
 
     return {
-      lenCm, widCm, ratio, topPct, shape, bold, flashy, balance, vibe, tier,
-      rough: m.rough, noFace: m.noFace,
-      group, groupKey, celeb: best, obj,
+      lenCm, widCm, ratio, topPct, shape, bold, flashy, balance, tier,
+      rough: m.rough, noFace: m.noFace, guessed: !match,
+      group, groupKey, top, pick: 0, celeb: top[0].celeb, vibe: top[0].sim,
+      matchGender: match ? match.gender : null, obj,
       stats: [
         { label: "소두력", v: clamp(100 - topPct, 4, 99) },
         { label: "이목구비 자기주장력", v: bold },
-        { label: "분위기 지수", v: vibe },
+        { label: "닮은꼴 싱크로율", v: top[0].sim },
         { label: "비율 밸런스", v: balance },
       ],
     };
@@ -791,22 +964,10 @@ body {
     const card = $("card");
     card.style.setProperty("--card-grad", r.group.grad);
     $("rThumb").src = r.thumb;
-    const cImg = $("rCeleb");
-    cImg.onerror = () => { cImg.onerror = null; cImg.src = emojiTile(r.celeb.emoji); };
-    cImg.src = celebSrc(r.celeb);
-    cImg.alt = r.celeb.name + " 사진";
-    cImg.style.objectPosition = r.celeb.pos || "";
-    $("rCelebCap").textContent = r.celeb.name;
-    $("rMatch").textContent = r.vibe + "%";
-    const credit = $("rCredit");
-    const link = document.createElement("a");
-    link.href = "https://commons.wikimedia.org/wiki/" + r.celeb.page;
-    link.target = "_blank"; link.rel = "noopener";
-    link.textContent = "Wikimedia Commons";
-    credit.replaceChildren(`${r.celeb.name} 사진: ${r.celeb.credit} · ${r.celeb.license} · `, link);
-    $("rName").textContent = r.celeb.name;
-    $("rEmoji").textContent = r.celeb.emoji;
-    $("rQuote").textContent = "“" + r.celeb.quote + "”";
+    renderPicks(r);
+    const genders = $("rGender");
+    genders.hidden = !r.sig;
+    [...genders.children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.g === (r.matchGender || "all"))));
     $("rLen").textContent = r.lenCm.toFixed(1) + "cm";
     $("rTop").textContent = "상위 " + r.topPct + "%";
     $("rStamp").textContent = new Date().toLocaleDateString("ko-KR");
@@ -836,11 +997,59 @@ body {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       [...stats.querySelectorAll(".bar i")].forEach((el, i) => { el.style.width = r.stats[i].v + "%"; });
     }));
-    if (r.noFace) setStatus("얼굴이 또렷하지 않아 사진 분위기로 골랐어요. 정면 셀카면 더 정확해져요!", "");
+    if (r.guessed && !r.noFace) setStatus("닮은꼴 모델을 불러오지 못해 대략 골랐어요. 새로고침 후 다시 해 보세요.", "");
+    else if (r.noFace) setStatus("얼굴이 또렷하지 않아 사진 분위기로 골랐어요. 정면 셀카면 더 정확해져요!", "");
     else if (r.rough) setStatus(`분석 완료! 각도나 거리 때문에 대략 잰 값이에요. (${r.group.label})`, "ok");
     else setStatus(`분석 완료! ${r.group.label} 타입이에요.`, "ok");
     resultWrap.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  function renderPicks(r) {
+    showCeleb(r, 0);
+    const picks = $("rTop3");
+    picks.replaceChildren(...r.top.map((m, i) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "pick";
+      b.setAttribute("aria-pressed", String(i === 0));
+      const img = document.createElement("img");
+      img.alt = ""; img.crossOrigin = "anonymous";
+      img.onerror = () => { img.onerror = null; img.src = emojiTile(m.celeb.emoji); };
+      img.src = celebSrc(m.celeb);
+      img.style.objectPosition = facePos(m.celeb);
+      const nm = document.createElement("span"); nm.textContent = (i + 1) + ". " + m.celeb.name;
+      const pc = document.createElement("span"); pc.className = "pct"; pc.textContent = m.sim + "%";
+      b.append(img, nm, pc);
+      b.addEventListener("click", () => {
+        showCeleb(r, i);
+        [...picks.children].forEach((el, j) => el.setAttribute("aria-pressed", String(j === i)));
+      });
+      return b;
+    }));
+  }
+
+  // swap which of the top 3 is featured on the card
+  function showCeleb(r, i) {
+    const m = r.top[i];
+    r.pick = i; r.celeb = m.celeb; r.vibe = m.sim;
+    const c = m.celeb;
+    const cImg = $("rCeleb");
+    cImg.onerror = () => { cImg.onerror = null; cImg.src = emojiTile(c.emoji); };
+    cImg.src = celebSrc(c);
+    cImg.alt = c.name + " 사진";
+    cImg.style.objectPosition = facePos(c);
+    $("rCelebCap").textContent = c.name;
+    $("rMatch").textContent = m.sim + "%";
+    const link = document.createElement("a");
+    link.href = c.page;
+    link.target = "_blank"; link.rel = "noopener";
+    link.textContent = "Wikimedia Commons";
+    $("rCredit").replaceChildren(`${c.name} 사진: ${c.credit} · ${c.license} · `, link);
+    $("rName").textContent = c.name;
+    $("rEmoji").textContent = c.emoji;
+    $("rQuote").textContent = "“" + c.quote + "”";
+  }
+
+  const facePos = (c) => `${c.fx}% ${c.fy}%`;
 
   function chip(text, solid) {
     const el = document.createElement("span");
@@ -934,9 +1143,9 @@ body {
 
     const meImg = $("incPhoto").checked ? await loadImg(r.thumb).catch(() => null) : await loadImg(emojiTile("🙈"));
     const celebImg = await loadImg(celebSrc(r.celeb), true).catch(() => loadImg(emojiTile(r.celeb.emoji)));
-    const pos = parseFloat(String(r.celeb.pos || "50% 22%").split(" ")[1]) / 100;
+    const pos = r.celeb.fy / 100;
     const fw = (CW - 3 * 40) / 2, iw = fw - 28, ih = iw * 1.25, fh = ih + 90;
-    [[meImg, CX + 40, "나", 0.5, -0.035], [celebImg, CX + 80 + fw, r.celeb.name, pos, 0.035]].forEach(([img, x, cap, py, rot]) => {
+    [[meImg, CX + 40, "나", 0.5, -0.035, 0.5], [celebImg, CX + 80 + fw, r.celeb.name, pos, 0.035, r.celeb.fx / 100]].forEach(([img, x, cap, py, rot, px]) => {
       const y = CY + 40;
       ctx.save();
       ctx.translate(x + fw / 2, y + fh / 2); ctx.rotate(rot); ctx.translate(-fw / 2, -fh / 2);
@@ -944,7 +1153,7 @@ body {
       ctx.save();
       roundRect(ctx, 14, 14, iw, ih, 16); ctx.clip();
       ctx.fillStyle = LILAC; ctx.fillRect(14, 14, iw, ih);
-      if (img) drawCover(ctx, img, 14, 14, iw, ih, py);
+      if (img) drawCover(ctx, img, 14, 14, iw, ih, py, px);
       ctx.restore();
       ctx.fillStyle = INK; ctx.font = `800 34px ${body}`; ctx.textAlign = "center";
       ctx.fillText(cap, fw / 2, ih + 66);
@@ -967,7 +1176,7 @@ body {
     const P = CX + 50, R = CX + CW - 50;
     let y = CY + BH + 70;
     ctx.fillStyle = MUTED; ctx.font = `800 30px ${body}`;
-    ctx.fillText("나와 얼굴 분위기가 닮은 셀럽은", P, y);
+    ctx.fillText("나와 가장 닮은 셀럽은", P, y);
     ctx.fillStyle = INK; ctx.font = `120px ${disp}`;
     ctx.fillText(r.celeb.name, P, y + 130);
     ctx.font = `70px ${body}`; ctx.textAlign = "right";
@@ -1128,11 +1337,13 @@ body {
     return out;
   }
   function loadImg(src, cors) { return new Promise((res, rej) => { const i = new Image(); if (cors) i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
-  function drawCover(ctx, img, x, y, w, h, posY) {
+  function drawCover(ctx, img, x, y, w, h, posY, posX = 0.5) {
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     const k = Math.max(w / iw, h / ih);
     const sw = w / k, sh = h / k;
-    ctx.drawImage(img, (iw - sw) / 2, (ih - sh) * posY, sw, sh, x, y, w, h);
+    // center the crop on (posX, posY) of the image, kept inside its bounds
+    const sx = clamp(iw * posX - sw / 2, 0, iw - sw), sy = clamp(ih * posY - sh * 0.45, 0, ih - sh);
+    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
   }
 
   // ---------- wire up ----------
@@ -1145,6 +1356,17 @@ body {
   $("btnRetry").addEventListener("click", () => { hideResult(); showLayer("idle"); window.scrollTo({ top: 0, behavior: "smooth" }); });
   $("mRetake").addEventListener("click", () => { closeModal(); hideResult(); showLayer("idle"); startCamera(); });
   $("mUpload").addEventListener("click", () => { closeModal(); fileInput.click(); });
+  $("rGender").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-g]");
+    const r = lastResult;
+    if (!b || !r || !r.sig) return;
+    const m = matchCelebs(r.sig, b.dataset.g);
+    r.top = m.top; r.matchGender = m.gender;
+    [...$("rGender").children].forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    renderPicks(r);
+    const row = $("rStats").children[2];
+    if (row) { row.children[2].textContent = r.top[0].sim; row.querySelector(".bar i").style.width = r.top[0].sim + "%"; }
+  });
   modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
 
@@ -1154,6 +1376,20 @@ body {
 
   // test hook: analyze an image element/canvas directly
   window.__analyze = analyze;
+  window.__celebSig = async (url) => {
+    await initMesh();
+    const img = await loadImg(url, true);
+    const k = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const pts = await detectBest(c);
+    if (!pts) return null;
+    const sig = await faceSignature(c, pts);
+    let cx = 0, cy = 0;
+    pts.forEach((p) => { cx += p.x; cy += p.y; });
+    return { vec: encodeVec(sig.desc), fx: Math.round(cx / pts.length / c.width * 100), fy: Math.round(cy / pts.length / c.height * 100), g: sig.gender, gp: +sig.gprob.toFixed(2) };
+  };
 
   initMesh().catch(() => {});
 })();
